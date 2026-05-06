@@ -1,6 +1,6 @@
 **Live Demo:** [https://ai-cargo-monitor-prod.vercel.app/](https://ai-cargo-monitor-prod.vercel.app/)
 
-# AI Cargo Monitor -- Pharmaceutical Cold-Chain Risk Intelligence
+# AI Cargo Monitor -- Pharmaceutical Cold-Chain Risk Intelligence (First Place at the 2026 UMD Smith Agentic AI Challenge)
 
 An end-to-end **agentic AI system** that monitors temperature-sensitive pharmaceutical
 shipments in real time, predicts spoilage risk with hybrid ML+rules scoring,
