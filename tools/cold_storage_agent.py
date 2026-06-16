@@ -64,15 +64,7 @@ class ColdStorageInput(BaseModel):
 
 
 def _parse_temp_range(range_str: str) -> tuple:
-    """
-    Parse a temp_range_supported string into a (low, high) float tuple.
-
-    Handles:
-      "2-8C"         -> (2.0, 8.0)
-      "15-25C"       -> (15.0, 25.0)
-      "-80C to -15C" -> (-80.0, -15.0)
-      "-80C to -20C" -> (-80.0, -20.0)
-    """
+    # Parse a temp_range_supported string into a (low, high) float tuple.
     norm = range_str.upper().strip()
 
     # Pass 1: "TO"-separated (handles negative values)
@@ -358,7 +350,7 @@ def _execute(
     ]
 
     return {
-        # ── Preserved outer keys (notification_agent + scheduling_agent read these) ──
+        # Preserved outer keys (notification_agent + scheduling_agent read these)
         "tool":                   "cold_storage_agent",
         "status":                 status,
         "shipment_id":            shipment_id,
@@ -371,7 +363,7 @@ def _execute(
         "urgency":                urgency,
         "requires_approval":      True,
         "timestamp":              datetime.now(timezone.utc).isoformat(),
-        # ── New additive keys ──
+        # New additive keys
         "recommended_facility_id":       primary_rec.get("id", ""),
         "temp_range_supported":          primary_rec.get("temp_range_supported", ""),
         "certifications":                primary_rec.get("certifications", []),
@@ -404,3 +396,16 @@ cold_storage_tool = StructuredTool.from_function(
     ),
     args_schema=ColdStorageInput,
 )
+
+# register with dynamic tool registry
+from tools.registry import REGISTRY, ToolMetadata
+REGISTRY.register(cold_storage_tool, ToolMetadata(
+    name="cold_storage_agent",
+    wave=1,
+    category="logistics",
+    applicable_tiers=["MEDIUM", "HIGH", "CRITICAL"],
+    applicable_phases=["*"],
+    applicable_products=["*"],
+    always_deferred=False,
+    description="Backup cold-storage facility matching and scoring",
+))

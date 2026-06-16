@@ -58,17 +58,7 @@ def _load_costs() -> dict:
 
 
 def _aggregate_leg_history(leg_id: str, product_id: str = "") -> Dict[str, Any]:
-    """
-    Pull all scored windows for a leg and compute excursion metrics.
-
-    Returns a dict with:
-      total_excursion_min   sum of minutes_outside_range across the leg
-      peak_temp_c           maximum avg_temp_c recorded
-      window_count          total windows in the leg
-      windows_in_breach     windows where det_score > 0
-      breach_timeline       list of {window_id, avg_temp_c, rules_fired}
-      appointment_count     from facilities.json for downstream disruption calc
-    """
+    # Pull all scored windows for a leg and compute excursion metrics.
     facilities = _load_facilities()
     appt_count = facilities.get(product_id, {}).get("appointment_count", 0)
 
@@ -115,10 +105,8 @@ def _aggregate_leg_history(leg_id: str, product_id: str = "") -> Dict[str, Any]:
 
 
 def _compute_loss(product_id: str, spoilage_probability: float) -> float:
-    """
-    Total estimated loss — backward-compatible single float.
-    Delegates to _compute_loss_breakdown() and sums all components.
-    """
+    # Total estimated loss — backward-compatible single float.
+    # Delegates to _compute_loss_breakdown() and sums all components.
     breakdown = _compute_loss_breakdown(product_id, spoilage_probability)
     return breakdown["total_estimated_loss_usd"]
 
@@ -128,16 +116,12 @@ def _compute_loss_breakdown(
     spoilage_probability: float,
     appointment_count: int = 0,
 ) -> dict:
-    """
-    Itemised loss estimate across four components:
-
-      product_loss       unit_cost × units × spoilage_prob
-      disposal_cost      disposal_per_unit × units × spoilage_prob
-      downstream         disruption_per_appointment × appointments × spoilage_prob
-      handling_cost      sunk cost — paid regardless of spoilage outcome
-
-    Returns a dict with individual line items and the total.
-    """
+    # Itemised loss estimate across four components:
+    #   product_loss       unit_cost × units × spoilage_prob
+    #   disposal_cost      disposal_per_unit × units × spoilage_prob
+    #   downstream         disruption_per_appointment × appointments × spoilage_prob
+    #   handling_cost      sunk cost — paid regardless of spoilage outcome
+    # Returns a dict with individual line items and the total.
     costs = _load_costs()
     record = costs.get(product_id, {})
     components = record.get("cost_components", {})
@@ -280,3 +264,16 @@ insurance_tool = StructuredTool.from_function(
     ),
     args_schema=InsuranceInput,
 )
+
+# Phase 3C — register with dynamic tool registry
+from tools.registry import REGISTRY, ToolMetadata
+REGISTRY.register(insurance_tool, ToolMetadata(
+    name="insurance_agent",
+    wave=2,
+    category="financial",
+    applicable_tiers=["HIGH", "CRITICAL"],
+    applicable_phases=["*"],
+    applicable_products=["*"],
+    always_deferred=False,
+    description="Insurance claim preparation and financial loss computation",
+))
