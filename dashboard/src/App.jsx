@@ -1,9 +1,10 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { getApi } from './hooks/useApi';
+import { useApi } from './hooks/useApi';
 import {
   LayoutDashboard, Ship, ScrollText, CheckCircle, Activity,
-  Bot, GitBranch, ShieldAlert, Brain, Wifi, WifiOff, ChevronRight,
+  Bot, GitBranch, ShieldAlert, Brain, Wifi, WifiOff, FlaskConical,
 } from 'lucide-react';
 import Overview from './components/Overview';
 import ShipmentList from './components/ShipmentList';
@@ -12,16 +13,20 @@ import AuditLog from './components/AuditLog';
 import Approvals from './components/Approvals';
 import Monitoring from './components/Monitoring';
 import AgentActivity from './components/AgentActivity';
+import AgentQuality from './components/AgentQuality';
 import GraphView from './components/GraphView';
+import TopBar from './components/TopBar';
+import { OrchestrationStreamProvider } from './lib/OrchestrationStreamContext';
 
 const NAV = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
   { to: '/monitoring', icon: Activity, label: 'Monitoring' },
   { to: '/shipments', icon: Ship, label: 'Shipments' },
   { to: '/agent', icon: Bot, label: 'Agent Activity' },
+  { to: '/agent-quality', icon: FlaskConical, label: 'Agent Quality' },
   { to: '/graph', icon: GitBranch, label: 'System Graph' },
   { to: '/audit', icon: ScrollText, label: 'Audit Log' },
-  { to: '/approvals', icon: CheckCircle, label: 'Approvals' },
+  { to: '/approvals', icon: CheckCircle, label: 'Approvals', badgeKey: 'approvals' },
 ];
 
 function LLMBadge() {
@@ -60,41 +65,49 @@ function LLMBadge() {
 }
 
 function Sidebar() {
+  const { data: pending } = useApi('/approvals/pending');
+  const pendingCount = Array.isArray(pending) ? pending.length : 0;
+
   return (
-    <aside className="w-60 flex flex-col min-h-screen shrink-0 bg-[#0c1222] border-r border-white/[0.06]">
-      <div className="px-5 py-5 border-b border-white/[0.06]">
+    <aside className="w-60 flex flex-col min-h-screen shrink-0 bg-[var(--card-bg)] border-r border-[var(--card-border)]">
+      <div className="px-5 py-5 border-b border-[var(--card-border)]">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-            <ShieldAlert className="w-4.5 h-4.5 text-white" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-cyan)' }}>
+            <ShieldAlert className="w-4.5 h-4.5" style={{ color: 'var(--card-bg)' }} />
           </div>
           <div>
-            <span className="text-sm font-bold tracking-tight text-white">AI Cargo</span>
-            <p className="text-[10px] text-slate-500 leading-tight">Cold-Chain Intelligence</p>
+            <span className="text-sm font-bold tracking-tight font-heading text-[var(--text-primary)]">AI Cargo</span>
+            <p className="text-[10px] text-[var(--text-secondary-2)] leading-tight">Cold-Chain Intelligence</p>
           </div>
         </div>
       </div>
 
       <nav className="flex-1 py-4 px-3 space-y-0.5">
-        {NAV.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to} to={to} end={to === '/'}
-            className={({ isActive }) =>
-              `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all duration-200
-              ${isActive
-                ? 'bg-gradient-to-r from-cyan-500/15 to-violet-500/10 text-cyan-300 font-medium shadow-sm shadow-cyan-500/5'
-                : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'}`
-            }
-          >
-            <Icon className="w-4 h-4 shrink-0" />
-            {label}
-            <ChevronRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-50 transition-opacity" />
+        {NAV.map(({ to, icon: Icon, label, badgeKey }) => (
+          <NavLink key={to} to={to} end={to === '/'}>
+            {({ isActive }) => (
+              <span
+                className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-heading transition-all duration-200
+                ${isActive ? 'bg-cyan-500/10 font-medium' : 'text-[var(--text-secondary-2)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}
+                style={isActive ? { color: 'var(--accent-cyan)' } : undefined}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {label}
+                {badgeKey === 'approvals' && pendingCount > 0 && (
+                  <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold font-data"
+                    style={{ backgroundColor: 'var(--accent-red)', color: '#fff' }}>
+                    {pendingCount}
+                  </span>
+                )}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
 
-      <div className="border-t border-white/[0.06]">
+      <div className="border-t border-[var(--card-border)]">
         <LLMBadge />
-        <div className="px-4 pb-4 text-[10px] text-slate-600 space-y-0.5">
+        <div className="px-4 pb-4 text-[10px] text-[var(--text-secondary-2)] space-y-0.5">
           <p>GDP / FDA 21 CFR 11 Compliant</p>
           <p>LangGraph + XGBoost + SHAP + RAG</p>
         </div>
@@ -105,20 +118,26 @@ function Sidebar() {
 
 export default function App() {
   return (
-    <div className="flex min-h-screen bg-[#0f172a] text-slate-200">
+    <div className="flex min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)] font-heading">
       <Sidebar />
-      <main className="flex-1 overflow-auto scrollbar-thin">
-        <Routes>
-          <Route path="/" element={<Overview />} />
-          <Route path="/monitoring" element={<Monitoring />} />
-          <Route path="/shipments" element={<ShipmentList />} />
-          <Route path="/shipments/:id" element={<ShipmentDetail />} />
-          <Route path="/agent" element={<AgentActivity />} />
-          <Route path="/graph" element={<GraphView />} />
-          <Route path="/audit" element={<AuditLog />} />
-          <Route path="/approvals" element={<Approvals />} />
-        </Routes>
-      </main>
+      <div className="flex-1 flex flex-col min-h-screen">
+        <TopBar />
+        <main className="flex-1 overflow-auto scrollbar-thin">
+          <OrchestrationStreamProvider>
+            <Routes>
+              <Route path="/" element={<Overview />} />
+              <Route path="/monitoring" element={<Monitoring />} />
+              <Route path="/shipments" element={<ShipmentList />} />
+              <Route path="/shipments/:id" element={<ShipmentDetail />} />
+              <Route path="/agent" element={<AgentActivity />} />
+              <Route path="/agent-quality" element={<AgentQuality />} />
+              <Route path="/graph" element={<GraphView />} />
+              <Route path="/audit" element={<AuditLog />} />
+              <Route path="/approvals" element={<Approvals />} />
+            </Routes>
+          </OrchestrationStreamProvider>
+        </main>
+      </div>
     </div>
   );
 }

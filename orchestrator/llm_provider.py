@@ -1,18 +1,4 @@
-"""
-Multi-provider LLM abstraction.
-
-Priority order (configurable via CARGO_LLM_PRIORITY):
-  1. "groq"     — fast cloud inference, requires GROQ_API_KEY
-  2. "ollama"   — local, free, no API key needed
-  3. "openai"   — requires OPENAI_API_KEY
-  4. "anthropic" — requires ANTHROPIC_API_KEY
-
-Set CARGO_LLM_PRIORITY to change order, e.g. "ollama,groq,openai"
-Set CARGO_LLM_ENABLED=0 to force deterministic mode (no LLM at all).
-
-Each provider is tried in order; first one that responds wins.
-"""
-
+# Multi-provider LLM abstraction. Order: groq, ollama, openai, anthropic.
 from __future__ import annotations
 
 import logging
@@ -98,10 +84,7 @@ _PROVIDERS = {
 
 
 def get_llm(force_refresh: bool = False):
-    """
-    Return the best available LLM, trying providers in priority order.
-    Returns None if no provider is available (triggers deterministic fallback).
-    """
+    # Return the best available LLM, trying providers in priority order.
     global _cached_provider, _cached_llm
 
     if os.environ.get("CARGO_LLM_ENABLED", "1") == "0":
@@ -133,7 +116,7 @@ def get_llm(force_refresh: bool = False):
 
 
 def get_provider_name() -> str:
-    """Return the active provider name, or 'deterministic'."""
+    # Return the active provider name, or 'deterministic'.
     if _cached_provider:
         return _cached_provider
     if get_llm() is not None:
@@ -141,8 +124,55 @@ def get_provider_name() -> str:
     return "deterministic"
 
 
+_DEFAULT_MODEL_PRICING = {
+    "groq:llama-3.3-70b-versatile":   {"input": 0.59, "output": 0.79},
+    "groq:llama-3.1-8b-instant":      {"input": 0.05, "output": 0.08},
+    "ollama:qwen2.5:7b":              {"input": 0.0,  "output": 0.0},
+    "openai:gpt-4o-mini":             {"input": 0.15, "output": 0.60},
+    "openai:gpt-4o":                  {"input": 2.50, "output": 10.0},
+    "anthropic:claude-3-5-haiku-latest": {"input": 0.80, "output": 4.0},
+    "anthropic:claude-3-5-sonnet-latest": {"input": 3.0, "output": 15.0},
+}
+
+
+def _load_model_pricing() -> dict:
+    # Load model pricing from CARGO_MODEL_PRICING env var (JSON) or defaults.
+    raw = os.environ.get("CARGO_MODEL_PRICING", "")
+    if raw:
+        try:
+            import json
+            return json.loads(raw)
+        except Exception:
+            logger.warning("CARGO_MODEL_PRICING is not valid JSON; using defaults")
+    return _DEFAULT_MODEL_PRICING
+
+
+CARGO_MODEL_PRICING = _load_model_pricing()
+
+
+def track_usage(node_name: str, response) -> dict:
+    # Extract token usage from `response.usage_metadata` and compute cost.
+    try:
+        meta = getattr(response, "usage_metadata", None) or {}
+        input_tokens = int(meta.get("input_tokens", 0) or meta.get("prompt_tokens", 0))
+        output_tokens = int(meta.get("output_tokens", 0) or meta.get("completion_tokens", 0))
+        total_tokens = input_tokens + output_tokens
+
+        provider = get_provider_name()
+        model = get_model_name()
+        key = f"{provider}:{model}"
+        pricing = CARGO_MODEL_PRICING.get(key, {"input": 0.0, "output": 0.0})
+        cost_usd = (
+            input_tokens * pricing["input"] / 1_000_000
+            + output_tokens * pricing["output"] / 1_000_000
+        )
+        return {node_name: {"tokens": total_tokens, "cost_usd": round(cost_usd, 8)}}
+    except Exception as exc:
+        logger.debug("track_usage failed (non-fatal): %s", exc)
+        return {node_name: {"tokens": 0, "cost_usd": 0.0}}
+
+
 def get_model_name() -> str:
-    """Return the active model name."""
     provider = get_provider_name()
     if provider == "groq":
         return os.environ.get("CARGO_GROQ_MODEL", "llama-3.3-70b-versatile")

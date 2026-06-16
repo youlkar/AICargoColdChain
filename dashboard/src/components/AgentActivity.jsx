@@ -1,348 +1,44 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useApi, getApi, postApi, deleteApi } from '../hooks/useApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import TierBadge from './TierBadge';
+import { safeStr } from '../lib/toolResults';
+import { useOrchestrationStream } from '../lib/OrchestrationStreamContext';
+import { AGENTS, WAVE_AGENTS, WAVE_BADGE, COLOR_MAP, getAgentMeta, isDeferredStep, getPlanCoverage } from '../lib/agents';
+import { ToolResult } from '../lib/toolResultRenderers';
+import { ExecutiveSummary, ExecutiveHistoryCard, LiveAgentsStrip } from './AgentActivityOverview';
 import {
-  Play, Zap, CheckCircle, ChevronDown, ChevronUp, Building2, DollarSign,
-  Shield, Brain, BookOpen, AlertTriangle, FileCheck, Navigation,
-  Activity, Bell, Clock, BarChart3, ArrowRight, Bot, Cpu, MapPin,
-  RefreshCw, Eye, RotateCcw, Wifi, WifiOff, XCircle,
+  Play, Zap, CheckCircle, ChevronDown, ChevronUp,
+  Shield, Brain, AlertTriangle,
+  Activity, ArrowRight, Bot, Cpu,
+  RefreshCw, Eye, RotateCcw, Wifi, WifiOff, XCircle, Radio, GitMerge,
+  MessageSquare, Layers, LayoutDashboard, Terminal, Search,
 } from 'lucide-react';
-
-/* ── Agent Tool Registry ───────────────────────────────────────────── */
-
-const AGENTS = [
-  { id: 'compliance_agent', name: 'Compliance Agent', icon: FileCheck, color: 'violet', desc: 'GDP/FDA validation using regulatory vector search + LLM interpretation' },
-  { id: 'route_agent', name: 'Route Agent', icon: Navigation, color: 'cyan', desc: 'Safe route selection from certified carrier options by product temp class' },
-  { id: 'cold_storage_agent', name: 'Cold Storage', icon: Building2, color: 'indigo', desc: 'Finds backup cold-storage facilities ranked by suitability and proximity' },
-  { id: 'notification_agent', name: 'Notification', icon: Bell, color: 'amber', desc: 'Multi-channel alerts to stakeholders with revised ETA and spoilage data' },
-  { id: 'scheduling_agent', name: 'Scheduling', icon: Clock, color: 'blue', desc: 'Reschedule downstream appointments with compliance flags and priority' },
-  { id: 'insurance_agent', name: 'Insurance', icon: DollarSign, color: 'emerald', desc: 'Itemized loss estimation with product, disposal, and disruption breakdown' },
-  { id: 'triage_agent', name: 'Triage', icon: BarChart3, color: 'rose', desc: 'Multi-shipment priority ranking with enrichment from scored windows' },
-  { id: 'approval_workflow', name: 'Approval', icon: Shield, color: 'red', desc: 'Human-in-the-loop approval queue for irreversible high-stakes actions' },
-];
-
-const COLOR_MAP = {
-  violet: { bg: 'bg-violet-500/10', border: 'border-violet-500/20', text: 'text-violet-400' },
-  cyan: { bg: 'bg-cyan-500/10', border: 'border-cyan-500/20', text: 'text-cyan-400' },
-  indigo: { bg: 'bg-indigo-500/10', border: 'border-indigo-500/20', text: 'text-indigo-400' },
-  amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400' },
-  blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', text: 'text-blue-400' },
-  emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400' },
-  rose: { bg: 'bg-rose-500/10', border: 'border-rose-500/20', text: 'text-rose-400' },
-  red: { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-400' },
-};
-
-function getAgentMeta(toolId) {
-  const agent = AGENTS.find(a => a.id === toolId);
-  if (!agent) return { icon: Zap, color: COLOR_MAP.violet, name: toolId };
-  return { icon: agent.icon, color: COLOR_MAP[agent.color], name: agent.name };
-}
-
-/* ── Shared helpers ────────────────────────────────────────────────── */
-
-function MethodBadge({ method }) {
-  if (!method) return null;
-  const isLLM = String(method).includes('llm') || String(method).includes('vector');
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ring-1 ring-inset ${
-      isLLM ? 'bg-violet-500/15 text-violet-400 ring-violet-500/20' : 'bg-slate-700/50 text-slate-400 ring-slate-600/30'
-    }`}>
-      {isLLM && <Brain className="w-2.5 h-2.5" />}
-      {String(method).replace(/_/g, ' ')}
-    </span>
-  );
-}
-
-function KV({ label, value, mono = false }) {
-  if (value === null || value === undefined || value === '') return null;
-  return (
-    <div className="flex items-start gap-1.5 text-[11px]">
-      <span className="text-slate-500 shrink-0">{label}:</span>
-      <span className={`text-slate-300 ${mono ? 'font-mono' : ''}`}>{String(value)}</span>
-    </div>
-  );
-}
-
-function safeStr(val) {
-  if (val === null || val === undefined) return '';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
-}
-
-/* ── Per-tool structured result renderers ──────────────────────────── */
-
-function ComplianceResult({ r }) {
-  if (!r) return null;
-  const cv = r.compliance_validation || {};
-  const status = cv.compliance_status || r.compliance_status || 'unknown';
-  const regs = cv.regulations_checked || cv.applicable_citations || [];
-  const rawViolations = cv.violations || r.violations || [];
-  const violations = rawViolations.map(v => typeof v === 'object' ? (v.violation_type || v.description || JSON.stringify(v)) : String(v));
-
-  const statusColor = status === 'compliant' || status === 'pass'
-    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-    : status === 'conditional_pass'
-    ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20'
-    : 'text-red-400 bg-red-500/10 border-red-500/20';
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${statusColor}`}>{status.toUpperCase()}</span>
-        <MethodBadge method={cv.decision_method || r.decision_method} />
-        {(cv.disposition || r.disposition) && <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded">Disposition: {cv.disposition || r.disposition}</span>}
-      </div>
-      {violations.length > 0 && (
-        <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-3">
-          <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider flex items-center gap-1 mb-1"><AlertTriangle className="w-3 h-3" /> Violations ({violations.length})</p>
-          {violations.slice(0, 5).map((v, i) => <p key={i} className="text-[11px] text-red-300/80 pl-4 truncate">• {v}</p>)}
-          {violations.length > 5 && <p className="text-[10px] text-red-400/50 pl-4">+{violations.length - 5} more</p>}
-        </div>
-      )}
-      {regs.length > 0 && (
-        <div className="bg-violet-500/5 border border-violet-500/10 rounded-lg p-3">
-          <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider flex items-center gap-1 mb-1"><BookOpen className="w-3 h-3" /> Regulations Checked ({regs.length})</p>
-          {regs.slice(0, 4).map((c, i) => <p key={i} className="text-[11px] text-violet-300/70 pl-4 truncate">• {safeStr(c)}</p>)}
-          {regs.length > 4 && <p className="text-[10px] text-violet-400/50 pl-4">+{regs.length - 4} more</p>}
-        </div>
-      )}
-      {cv.evidence_summary && <p className="text-[11px] text-slate-400 italic leading-relaxed">{safeStr(cv.evidence_summary)}</p>}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="Score" value={cv.compliance_score} mono />
-        <KV label="Risk Tier" value={cv.risk_tier} />
-        <KV label="Event" value={cv.event_type} />
-        <KV label="Log ID" value={r.log_id} mono />
-      </div>
-    </div>
-  );
-}
-
-function RouteResult({ r }) {
-  if (!r) return null;
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm font-bold text-white">{safeStr(r.carrier) || '—'}</span>
-        <MethodBadge method={r.selection_method} />
-        {r.temp_class && <span className="text-[10px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded border border-cyan-500/20">{r.temp_class}</span>}
-      </div>
-      {r.recommended_route && <p className="text-xs text-slate-400">{safeStr(r.recommended_route)}</p>}
-      {r.selection_rationale && (
-        <div className="bg-violet-500/5 border border-violet-500/10 rounded-lg p-3">
-          <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Brain className="w-3 h-3" /> LLM Rationale</p>
-          <p className="text-[11px] text-violet-300/80 leading-relaxed">{safeStr(r.selection_rationale)}</p>
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="ETA change" value={r.eta_change_hours != null ? `${r.eta_change_hours}h` : null} />
-        <KV label="Reason" value={r.reason} />
-      </div>
-    </div>
-  );
-}
-
-function ColdStorageResult({ r }) {
-  if (!r) return null;
-  const alts = Array.isArray(r.alternative_facilities) ? r.alternative_facilities : [];
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="font-semibold text-white">{safeStr(r.recommended_facility) || '—'}</span>
-        {r.suitability_tier && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-emerald-500/15 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">{r.suitability_tier}</span>}
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="Location" value={r.location} />
-        <KV label="Temp range" value={r.temp_range_supported || r.temp_range} mono />
-        <KV label="Capacity" value={r.available_capacity_pct != null ? `${Number(r.available_capacity_pct).toFixed(0)}%` : null} />
-        <KV label="Advance notice" value={r.advance_notice_required_hours != null ? `${r.advance_notice_required_hours}h` : null} />
-        <KV label="Contact" value={r.contact} />
-        <KV label="Urgency" value={r.urgency} />
-      </div>
-      {alts.length > 0 && (
-        <div className="mt-1">
-          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">Alternatives ({alts.length})</p>
-          {alts.slice(0, 3).map((a, i) => (
-            <div key={i} className="flex items-center gap-2 text-[11px] py-0.5">
-              <span className="text-slate-400 truncate flex-1">{safeStr(a.name || a.id || `Alt ${i + 1}`)}</span>
-              {a.disqualified ? <span className="text-red-400 text-[10px]">{safeStr(a.disqualification_reason).replace(/_/g, ' ')}</span>
-                : a.suitability_tier && <span className="text-emerald-400 text-[10px]">{a.suitability_tier}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InsuranceResult({ r }) {
-  if (!r) return null;
-  const lb = r.loss_breakdown && typeof r.loss_breakdown === 'object' ? r.loss_breakdown : {};
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-lg font-bold text-white">{r.estimated_loss_usd != null ? `$${Number(r.estimated_loss_usd).toLocaleString()}` : '—'}</span>
-        <span className="text-[10px] text-slate-500">estimated loss</span>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="Product" value={r.product_name} />
-        <KV label="Incident" value={r.incident_summary} />
-        {Object.keys(lb).length > 0 && Object.entries(lb).map(([k, v]) => <KV key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'number' ? `$${v.toLocaleString()}` : safeStr(v)} />)}
-        <KV label="Replacement" value={r.replacement_lead_time_days != null ? `${r.replacement_lead_time_days}d (${r.expedited_lead_time_days || '?'}d exp.)` : null} />
-        <KV label="Substitute" value={r.substitute_available != null ? (r.substitute_available ? 'Available' : 'No') : null} />
-      </div>
-      {Array.isArray(r.next_steps) && r.next_steps.length > 0 && (
-        <div className="mt-1">
-          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">Next Steps</p>
-          {r.next_steps.slice(0, 3).map((s, i) => <p key={i} className="text-[10px] text-slate-400 pl-3">• {safeStr(s)}</p>)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SchedulingResult({ r }) {
-  if (!r) return null;
-  const recs = Array.isArray(r.facility_recommendations) ? r.facility_recommendations : [];
-  return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="Reason" value={r.reason} />
-        <KV label="Product" value={r.product_id} />
-      </div>
-      {recs.length > 0 && (
-        <div className="space-y-2 mt-1">
-          {recs.slice(0, 2).map((f, i) => (
-            <div key={i} className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2.5 space-y-1">
-              <p className="text-[11px] text-white font-medium truncate">{safeStr(f.facility)}</p>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                <KV label="Action" value={f.action?.replace(/_/g, ' ')} />
-                <KV label="Appointments" value={f.appointment_count} />
-                <KV label="Revised ETA" value={f.revised_eta} mono />
-                <KV label="Patient impact" value={f.patient_impact} />
-                <KV label="Contact" value={f.facility_contact} mono />
-              </div>
-            </div>
-          ))}
-          {recs.length > 2 && <p className="text-[10px] text-slate-500">+{recs.length - 2} more facilities</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NotificationResult({ r }) {
-  if (!r) return null;
-  const ap = r.alert_payload || {};
-  const isAgentic = r.agentic_workflow === true;
-  const sent = r.notifications_sent || [];
-
-  const msgPreview = r.message_preview || ap.message || r.message || '';
-
-  return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="Channel" value={r.channel} />
-        <KV label="Recipients" value={Array.isArray(r.recipients) ? r.recipients.join(', ') : safeStr(r.recipients)} />
-        {isAgentic && <KV label="Batch ID" value={r.notification_batch_id} mono />}
-        {isAgentic && <KV label="Sent/Failed" value={`${r.successful_deliveries || 0} / ${r.failed_deliveries || 0}`} />}
-        {!isAgentic && <KV label="Revised ETA" value={ap.revised_eta} mono />}
-        {!isAgentic && <KV label="Spoilage" value={ap.spoilage_probability_pct != null ? `${ap.spoilage_probability_pct}%` : null} />}
-      </div>
-
-      {msgPreview && (
-        <div className="mt-1.5 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/15">
-          <span className="text-[9px] font-semibold text-amber-400 uppercase tracking-wider block mb-1">Notification Message</span>
-          <p className="text-xs text-amber-200/90 leading-relaxed whitespace-pre-wrap">{msgPreview}</p>
-        </div>
-      )}
-
-      {sent.length > 0 && (
-        <div className="space-y-1">
-          <span className="text-[9px] font-semibold text-cyan-400 uppercase tracking-wider">Delivered Notifications</span>
-          {sent.slice(0, 4).map((n, i) => (
-            <div key={i} className="flex items-center gap-2 text-[11px] p-1.5 rounded bg-slate-800/40">
-              <span className={`w-1.5 h-1.5 rounded-full ${n.status === 'sent' ? 'bg-emerald-400' : 'bg-red-400'}`} />
-              <span className="text-slate-300 font-medium">{n.recipient_name || n.recipient_role}</span>
-              <span className="text-slate-500">via {n.channel}</span>
-              {n.subject && <span className="text-cyan-300/80 truncate ml-auto max-w-[200px]">"{n.subject}"</span>}
-            </div>
-          ))}
-          {sent.length > 4 && <p className="text-[10px] text-slate-500">+{sent.length - 4} more</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ApprovalResult({ r, decisionMeta }) {
-  if (!r) return null;
-  const isResolved = decisionMeta?._approval_status === 'approved' || decisionMeta?._execution_mode === 'post_approval';
-  const displayStatus = isResolved ? 'approved' : (r.status || 'pending');
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-          displayStatus === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-          : displayStatus === 'rejected' ? 'bg-red-500/10 text-red-400 border-red-500/20'
-          : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-        }`}>{displayStatus.toUpperCase()}</span>
-        {decisionMeta?._approved_by && <span className="text-[10px] text-slate-500">by {decisionMeta._approved_by}</span>}
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <KV label="Approval ID" value={r.approval_id} mono />
-        <KV label="Urgency" value={r.urgency} />
-        {r.message && <div className="col-span-2"><KV label="Message" value={r.message} /></div>}
-      </div>
-    </div>
-  );
-}
-
-function ToolResult({ tool, result: r, decisionMeta }) {
-  if (!r) return null;
-  try {
-    switch (tool) {
-      case 'compliance_agent':   return <ComplianceResult r={r} />;
-      case 'route_agent':        return <RouteResult r={r} />;
-      case 'cold_storage_agent': return <ColdStorageResult r={r} />;
-      case 'scheduling_agent':   return <SchedulingResult r={r} />;
-      case 'insurance_agent':    return <InsuranceResult r={r} />;
-      case 'notification_agent': return <NotificationResult r={r} />;
-      case 'approval_workflow':  return <ApprovalResult r={r} decisionMeta={decisionMeta} />;
-      default: return <FallbackResult r={r} />;
-    }
-  } catch {
-    return <FallbackResult r={r} />;
-  }
-}
-
-function FallbackResult({ r }) {
-  if (!r) return null;
-  const show = ['status', 'risk_tier', 'message', 'shipment_id'];
-  return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-      {show.filter(k => r[k]).map(k => <KV key={k} label={k} value={safeStr(r[k])} />)}
-    </div>
-  );
-}
+import { getRunStatus } from '../lib/agentSummaries';
+import { EmptyState } from './shared/States';
 
 /* ── Agent Registry (no type labels) ──────────────────────────────── */
 
 function AgentRegistry() {
   return (
     <div>
-      <h2 className="text-sm font-semibold text-slate-300 mb-3">Agent Tool Registry</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold font-heading text-[var(--text-secondary-2)]">Agent Tool Registry</h2>
+        <p className="text-[10px] text-[var(--text-secondary-2)]">Wave 1 &amp; 2 agents run in parallel via LangGraph <code className="text-[var(--text-secondary-2)]">Send()</code> fan-out</p>
+      </div>
       <div className="grid grid-cols-4 gap-3">
         {AGENTS.map((agent, i) => {
           const c = COLOR_MAP[agent.color];
           const Icon = agent.icon;
+          const wave = WAVE_BADGE[agent.wave];
           return (
-            <div key={agent.id} className={`glass-card-sm p-4 animate-slide-up border ${c.border}`} style={{ animationDelay: `${i * 50}ms` }}>
+            <div key={agent.id} className={`panel-sm p-4 animate-slide-up border ${c.border}`} style={{ animationDelay: `${i * 50}ms` }}>
               <div className="flex items-center gap-2 mb-2">
                 <div className={`rounded-lg p-1.5 ${c.bg}`}><Icon className={`w-4 h-4 ${c.text}`} /></div>
                 <span className={`text-xs font-bold ${c.text}`}>{agent.name}</span>
+                {wave && <span className={`ml-auto px-1.5 py-0.5 rounded text-[9px] font-bold border ${wave.cls}`}>{wave.label}</span>}
               </div>
-              <p className="text-[10px] text-slate-400 leading-relaxed">{agent.desc}</p>
+              <p className="text-[10px] text-[var(--text-secondary-2)] leading-relaxed">{agent.desc}</p>
             </div>
           );
         })}
@@ -359,7 +55,6 @@ function PipelineSteps({ decision }) {
   const isConfirmed = d._execution_mode === 'confirmed' || d.review_status === 'confirmed';
   const isAwaitingReview = d.awaiting_approval && !isPostApproval && !isConfirmed;
   const hasRevisedPlan = Array.isArray(d.revised_plan) && d.revised_plan.length > 0;
-  const hasCorrections = d.review_status === 'corrections_proposed';
   const hasReflection = Array.isArray(d.reflection_notes) && d.reflection_notes.length > 0;
   const hasObservation = !!d.observation;
   const hasExecution = Array.isArray(d.actions_taken) && d.actions_taken.length > 0;
@@ -400,26 +95,284 @@ function PipelineSteps({ decision }) {
     ...(hasRevisedPlan ? [{ label: 'Revise', done: true, icon: Zap }] : []),
     { label: 'Output', done: !!d.decision_summary, icon: CheckCircle },
   ];
+  // Which wave-1/wave-2 specialist agents actually produced a result, so the
+  // "Execute" step can be expanded into the parallel dispatch structure.
+  const executedTools = new Set([
+    ...(Array.isArray(d.actions_taken) ? d.actions_taken : []),
+    ...(Array.isArray(d.corrective_actions) ? d.corrective_actions : []),
+  ].map(a => a?.tool).filter(Boolean));
+  const showWaves = hasExecution && (executedTools.size > 0);
+
   return (
-    <div className="flex items-center gap-1 overflow-x-auto py-2">
-      {steps.map((s, i) => {
-        const Icon = s.icon;
-        const isReplan = s.label.startsWith('Re-plan');
-        return (
-          <div key={s.label} className="flex items-center gap-1 shrink-0">
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold ${
-              isReplan ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                : s.special && s.pulse ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
-                : s.special ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
-                : s.done ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
-                : 'bg-white/[0.03] text-slate-600 border border-white/[0.06]'
-            }`}>
-              <Icon className="w-3 h-3" /> {s.label}
+    <div className="space-y-2">
+      <div className="flex items-center gap-1 overflow-x-auto py-2">
+        {steps.map((s, i) => {
+          const Icon = s.icon;
+          const isReplan = s.label.startsWith('Re-plan');
+          return (
+            <div key={s.label} className="flex items-center gap-1 shrink-0">
+              <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold ${
+                isReplan ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  : s.special && s.pulse ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
+                  : s.special ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                  : s.done ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                  : 'bg-white/[0.03] text-[var(--text-secondary-2)] border border-[var(--card-border)]'
+              }`}>
+                <Icon className="w-3 h-3" /> {s.label}
+              </div>
+              {i < steps.length - 1 && <ArrowRight className={`w-3 h-3 shrink-0 ${s.done ? 'text-cyan-600' : 'text-[var(--text-secondary-2)]'}`} />}
             </div>
-            {i < steps.length - 1 && <ArrowRight className={`w-3 h-3 shrink-0 ${s.done ? 'text-cyan-600' : 'text-slate-700'}`} />}
+          );
+        })}
+      </div>
+      {showWaves && <WaveCoverage executedTools={executedTools} />}
+    </div>
+  );
+}
+
+/* Shows which wave-1/wave-2 specialist agents ran for this decision, mirroring
+   the live WaveLanesPanel but derived from the persisted actions_taken list. */
+function WaveCoverage({ executedTools }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1">
+      {[1, 2].map(wave => {
+        const badge = WAVE_BADGE[wave];
+        const agentIds = WAVE_AGENTS[wave];
+        return (
+          <div key={wave} className="flex items-center gap-1.5">
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badge.cls}`}>{badge.label}</span>
+            {agentIds.map(id => {
+              const meta = getAgentMeta(id);
+              const ran = executedTools.has(id);
+              return (
+                <span key={id} className={`flex items-center gap-1 text-[10px] ${ran ? meta.color.text : 'text-[var(--text-secondary-2)]'}`}>
+                  {ran ? <CheckCircle className="w-2.5 h-2.5" /> : <span className="w-2.5 h-2.5 rounded-full border border-[var(--card-border)] inline-block" />}
+                  {meta.name}
+                </span>
+              );
+            })}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ── Phase 4A: Live Stream Panel ──────────────────────────────────── */
+
+/* ── Wave Lanes: visualizes wave1/wave2 parallel dispatch ───────────── */
+
+function WaveLane({ wave, agentStatus }) {
+  const agentIds = WAVE_AGENTS[wave] || [];
+  const badge = WAVE_BADGE[wave];
+  const anyActive = agentIds.some(id => agentStatus[id]?.status === 'running');
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${badge.cls}`}>{badge.label}</span>
+        <span className="text-[10px] text-[var(--text-secondary-2)]">— {agentIds.length} agents in parallel</span>
+        {anyActive && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse ml-auto" />}
+      </div>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${agentIds.length}, minmax(0, 1fr))` }}>
+        {agentIds.map(id => {
+          const meta = getAgentMeta(id);
+          const Icon = meta.icon;
+          const st = agentStatus[id];
+          const status = st?.status || 'idle';
+          const ring = status === 'running' ? 'border-cyan-500/40 animate-pulse'
+            : status === 'done' ? (st.success === false ? 'border-red-500/30' : 'border-emerald-500/30')
+            : 'border-[var(--card-border)]';
+          return (
+            <div key={id} className={`rounded-lg border ${ring} ${meta.color.bg} p-2 min-w-0`}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Icon className={`w-3 h-3 shrink-0 ${meta.color.text}`} />
+                <span className={`text-[10px] font-semibold truncate ${meta.color.text}`}>{meta.name}</span>
+              </div>
+              <div className="mt-1 flex items-center gap-1.5">
+                {status === 'idle' && <span className="text-[9px] text-[var(--text-secondary-2)]">idle</span>}
+                {status === 'running' && <span className="text-[9px] text-cyan-400 flex items-center gap-1"><div className="w-2.5 h-2.5 border-[1.5px] border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" /> running</span>}
+                {status === 'done' && (
+                  <span className={`text-[9px] font-medium ${st.success === false ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {st.success === false ? '✗ failed' : '✓ done'}
+                    {st.confidence != null && ` · conf ${Number(st.confidence).toFixed(2)}`}
+                  </span>
+                )}
+              </div>
+              {status === 'done' && st.reasoning && (
+                <p className="text-[9px] text-[var(--text-secondary-2)] mt-0.5 line-clamp-2 leading-tight">{st.reasoning}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WaveLanesPanel({ agentStatus }) {
+  return (
+    <div className="bg-white/[0.02] border border-[var(--card-border)] rounded-xl p-3 flex gap-4">
+      <WaveLane wave={1} agentStatus={agentStatus} />
+      <div className="flex items-center text-[var(--text-secondary-2)] shrink-0">
+        <ArrowRight className="w-4 h-4" />
+      </div>
+      <WaveLane wave={2} agentStatus={agentStatus} />
+    </div>
+  );
+}
+
+const EVENT_STYLES = {
+  agent_thinking:  { color: 'text-violet-400', bg: 'bg-violet-500/10', icon: Brain,       label: 'Thinking' },
+  tool_start:      { color: 'text-cyan-400',   bg: 'bg-cyan-500/10',   icon: Play,        label: 'Tool →' },
+  tool_result:     { color: 'text-emerald-400',bg: 'bg-emerald-500/10',icon: CheckCircle, label: 'Tool ✓' },
+  node_start:      { color: 'text-[var(--text-secondary-2)]',  bg: 'bg-white/[0.03]',  icon: Activity,    label: 'Node' },
+  node_end:        { color: 'text-[var(--text-secondary-2)]',  bg: 'bg-white/[0.03]',  icon: Activity,    label: 'Done' },
+  agent_dispatch:  { color: 'text-amber-400',  bg: 'bg-amber-500/10',  icon: Layers,      label: 'Dispatch' },
+  wave_complete:   { color: 'text-blue-400',   bg: 'bg-blue-500/10',   icon: GitMerge,    label: 'Wave ✓' },
+  agent_message:   { color: 'text-indigo-400', bg: 'bg-indigo-500/10', icon: MessageSquare,label: 'Message' },
+  run_complete:    { color: 'text-emerald-400',bg: 'bg-emerald-500/10',icon: CheckCircle, label: 'Complete' },
+  stream_error:    { color: 'text-red-400',    bg: 'bg-red-500/10',    icon: AlertTriangle,label: 'Error' },
+};
+
+function LiveStreamPanel() {
+  const { windowId, liveStream } = useOrchestrationStream();
+  const { events, thinking, activeNode, agentStatus, connected, complete, streaming, start, stop } = liveStream;
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [events]);
+
+  const handleStart = () => {
+    if (!windowId) return;
+    start();
+  };
+  const handleStop = () => {
+    stop();
+  };
+
+  const thinkingNodes = Object.entries(thinking).filter(([, t]) => t.length > 0);
+
+  return (
+    <div className="panel p-5 space-y-4 border border-violet-500/10">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Radio className={`w-4 h-4 ${connected && streaming ? 'text-emerald-400 animate-pulse' : 'text-[var(--text-secondary-2)]'}`} />
+          <span className="text-sm font-semibold font-heading text-[var(--text-primary)]">Live Agent Stream</span>
+          {connected && streaming && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">STREAMING</span>
+          )}
+          {complete && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-medium">COMPLETE</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {streaming ? (
+            <button onClick={handleStop}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/80 hover:bg-red-500 text-white rounded-lg text-xs font-medium transition">
+              Stop
+            </button>
+          ) : (
+            <button onClick={handleStart} disabled={!windowId}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition">
+              <Radio className="w-3 h-3" /> Watch Live
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Active node indicator */}
+      {activeNode && (
+        <div className="flex items-center gap-2 text-xs">
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+          <span className="text-[var(--text-secondary-2)]">Active node:</span>
+          <span className="font-data text-cyan-300">{activeNode}</span>
+        </div>
+      )}
+
+      {/* Wave 1 / Wave 2 parallel dispatch lanes */}
+      {(streaming || Object.keys(agentStatus).length > 0) && (
+        <WaveLanesPanel agentStatus={agentStatus} />
+      )}
+
+      {/* LLM Thinking panels */}
+      {thinkingNodes.length > 0 && (
+        <div className="space-y-2">
+          {thinkingNodes.map(([node, tokens]) => (
+            <div key={node} className="bg-violet-950/30 border border-violet-500/15 rounded-xl p-3">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Brain className="w-3 h-3 text-violet-400" />
+                <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">{node} — thinking</span>
+              </div>
+              <p className="text-[11px] text-violet-200/80 font-data leading-relaxed whitespace-pre-wrap line-clamp-6">
+                {tokens}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Event log */}
+      <div className="space-y-1 max-h-72 overflow-y-auto scrollbar-thin pr-1">
+        {events.length === 0 && !streaming && (
+          <p className="text-xs text-[var(--text-secondary-2)] py-4 text-center">
+            Enter a Window ID above, then click "Watch Live" to stream a run in real time.
+          </p>
+        )}
+        {events.map((ev, i) => {
+          const style = EVENT_STYLES[ev.type] || { color: 'text-[var(--text-secondary-2)]', bg: 'bg-white/[0.03]', icon: Activity, label: ev.type };
+          const Icon = style.icon;
+          return (
+            <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded-lg ${style.bg}`}>
+              <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${style.color}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-bold ${style.color}`}>{style.label}</span>
+                  {ev.node  && <span className="text-[10px] text-[var(--text-secondary-2)] font-data">{ev.node}</span>}
+                  {ev.tool  && <span className="text-[10px] text-[var(--text-secondary-2)] font-data">{ev.tool}</span>}
+                  <span className="text-[9px] text-[var(--text-secondary-2)] ml-auto">{new Date(ev._ts).toLocaleTimeString()}</span>
+                </div>
+                {/* Extra detail per event type */}
+                {ev.type === 'agent_dispatch' && ev.deferred?.length > 0 && (
+                  <p className="text-[10px] text-amber-300/70">deferred: {ev.deferred.join(', ')}</p>
+                )}
+                {ev.type === 'tool_result' && (
+                  <p className={`text-[10px] ${ev.success === false ? 'text-red-400/80' : 'text-emerald-300/70'}`}>
+                    {ev.success === false ? '✗ failed' : '✓ success'}
+                    {ev.confidence != null && ` · confidence ${Number(ev.confidence).toFixed(2)}`}
+                    {ev.reasoning && <span className="text-[var(--text-secondary-2)]"> — {safeStr(ev.reasoning).slice(0, 100)}{safeStr(ev.reasoning).length > 100 ? '…' : ''}</span>}
+                  </p>
+                )}
+                {ev.type === 'wave_complete' && ev.cascade_keys?.length > 0 && (
+                  <p className="text-[10px] text-blue-300/70">cascade: {ev.cascade_keys.join(', ')}</p>
+                )}
+                {ev.type === 'node_end' && ev.reflection_notes?.length > 0 && (
+                  <p className="text-[10px] text-[var(--text-secondary-2)] truncate">{ev.reflection_notes[0]}</p>
+                )}
+                {ev.type === 'agent_message' && ev.sender && (
+                  <div className="text-[10px] text-indigo-300/70">
+                    <p className="truncate">{ev.sender} → {ev.recipient}: {String(ev.message_type || '').replace(/_/g, ' ')}</p>
+                    {ev.payload && Object.keys(ev.payload).length > 0 && (
+                      <p className="text-indigo-400/50 truncate font-data">{safeStr(ev.payload).slice(0, 120)}{safeStr(ev.payload).length > 120 ? '…' : ''}</p>
+                    )}
+                    {ev.reasoning && <p className="text-[var(--text-secondary-2)] truncate">{ev.reasoning}</p>}
+                  </div>
+                )}
+                {ev.type === 'run_complete' && (
+                  <p className={`text-[10px] ${ev.awaiting_approval ? 'text-amber-300' : 'text-emerald-300'}`}>
+                    {ev.awaiting_approval ? `⏳ Awaiting approval (id: ${ev.approval_id})` : '✓ Run complete'}
+                  </p>
+                )}
+                {ev.type === 'stream_error' && (
+                  <p className="text-[10px] text-red-400">{ev.error}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }
@@ -430,23 +383,40 @@ export default function AgentActivity() {
   const { data: history, loading, refetch } = useApi('/orchestrator/history?limit=30');
   const { data: mode } = useApi('/orchestrator/mode');
   const { messages: wsMessages, connected: wsConnected } = useWebSocket([
-    'orchestrator_decision', 'approval_decided', 'approval_executed', 'tool_executed',
+    'orchestrator_decision', 'approval_decided', 'approval_executed', 'approval_confirmed', 'tool_executed',
   ]);
   const [running, setRunning] = useState(false);
   const [expanded, setExpanded] = useState(null);
-  const [windowId, setWindowId] = useState('');
-  const [demoResult, setDemoResult] = useState(null);
-  const [liveEvents, setLiveEvents] = useState([]);
+  const [view, setView] = useState('overview');
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('ALL');
+  const [historyRangeHours, setHistoryRangeHours] = useState(0);
+  const { windowId, setWindowId, demoResult, setDemoResult, liveEvents, setLiveEvents, liveStream } = useOrchestrationStream();
 
   useEffect(() => {
     if (wsMessages.length === 0) return;
     const latest = wsMessages[wsMessages.length - 1];
     setLiveEvents(prev => [...prev.slice(-19), { ...latest, _ts: Date.now() }]);
 
-    if (latest.type === 'orchestrator_decision' || latest.type === 'approval_executed') {
+    if (latest.type === 'orchestrator_decision' || latest.type === 'approval_executed'
+      || latest.type === 'approval_confirmed' || latest.type === 'approval_decided') {
       refetch();
     }
-  }, [wsMessages, refetch]);
+
+    // If an approval was confirmed/executed for the run currently shown in the
+    // Run Panel, refresh it in place so the page doesn't look stuck waiting
+    // for approval after it's been actioned from another tab.
+    if (latest.type === 'approval_confirmed' || latest.type === 'approval_executed') {
+      const updated = latest.record || latest.decision;
+      if (updated && demoResult) {
+        const currentId = demoResult.window_id || demoResult._window_id;
+        const updatedId = updated.window_id || updated._window_id;
+        if (currentId && updatedId && currentId === updatedId) {
+          setDemoResult(updated);
+        }
+      }
+    }
+  }, [wsMessages, refetch, demoResult, setDemoResult]);
 
   const runSingle = useCallback(async (wid) => {
     setRunning(true);
@@ -492,44 +462,58 @@ export default function AgentActivity() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Agent Orchestration</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Plan → Reflect → Revise → Execute → Observe pipeline</p>
+          <h1 className="text-2xl font-bold font-heading text-[var(--text-primary)]">Agent Orchestration</h1>
+          <p className="text-sm text-[var(--text-secondary-2)] mt-0.5">Parallel multi-agent · Wave 1 → Wave 2 · Self-correcting loop · HITL checkpoint</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="glass-card-sm px-2.5 py-1.5 flex items-center gap-1.5">
+          <div className="panel-sm p-1 flex items-center gap-1">
+            <button onClick={() => setView('overview')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium font-heading transition ${
+                view === 'overview' ? 'bg-cyan-500/15 text-cyan-400' : 'text-[var(--text-secondary-2)] hover:text-[var(--text-primary)]'
+              }`}>
+              <LayoutDashboard className="w-3.5 h-3.5" /> Overview
+            </button>
+            <button onClick={() => setView('technical')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium font-heading transition ${
+                view === 'technical' ? 'bg-cyan-500/15 text-cyan-400' : 'text-[var(--text-secondary-2)] hover:text-[var(--text-primary)]'
+              }`}>
+              <Terminal className="w-3.5 h-3.5" /> Technical
+            </button>
+          </div>
+          <div className="panel-sm px-2.5 py-1.5 flex items-center gap-1.5">
             {wsConnected ? <Wifi className="w-3 h-3 text-emerald-400" /> : <WifiOff className="w-3 h-3 text-red-400" />}
-            <span className={`text-[10px] font-medium ${wsConnected ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className={`text-[10px] font-medium font-heading ${wsConnected ? 'text-emerald-400' : 'text-red-400'}`}>
               {wsConnected ? 'Live' : 'Disconnected'}
             </span>
           </div>
           {mode && (
-            <div className="glass-card-sm px-3 py-2 flex items-center gap-2">
+            <div className="panel-sm px-3 py-2 flex items-center gap-2">
               <Brain className="w-3.5 h-3.5 text-violet-400" />
-              <span className="text-[11px] text-violet-300 font-mono">{safeStr(mode.model || 'deterministic')}</span>
+              <span className="text-[11px] text-violet-300 font-data">{safeStr(mode.model || 'deterministic')}</span>
               <span className={`w-2 h-2 rounded-full ${mode.mode === 'agentic' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
             </div>
           )}
         </div>
       </div>
 
-      {/* Live Event Feed */}
-      {liveEvents.length > 0 && (
-        <div className="glass-card-sm p-3 border border-cyan-500/10 space-y-1.5 max-h-32 overflow-y-auto scrollbar-thin">
+      {/* Live Event Feed — technical only */}
+      {view === 'technical' && liveEvents.length > 0 && (
+        <div className="panel-sm p-3 border border-cyan-500/10 space-y-1.5 max-h-32 overflow-y-auto scrollbar-thin">
           <div className="flex items-center gap-1.5 mb-1">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">Live Events</span>
           </div>
           {liveEvents.slice(-5).reverse().map((evt, i) => (
             <div key={i} className="flex items-center gap-2 text-[11px]">
-              <span className="text-slate-600 font-mono w-16 shrink-0">{new Date(evt._ts).toLocaleTimeString()}</span>
+              <span className="text-[var(--text-secondary-2)] font-data w-16 shrink-0">{new Date(evt._ts).toLocaleTimeString()}</span>
               <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
                 evt.type === 'approval_executed' ? 'bg-emerald-500/10 text-emerald-400'
                 : evt.type === 'approval_decided' ? 'bg-amber-500/10 text-amber-400'
                 : 'bg-cyan-500/10 text-cyan-400'
               }`}>{evt.type.replace('_', ' ')}</span>
-              <span className="text-slate-400 truncate">
+              <span className="text-[var(--text-secondary-2)] truncate">
                 {evt.decision?.window_id || evt.decision?._window_id || evt.result?.approval_id || evt.approval_id || ''}
               </span>
             </div>
@@ -538,91 +522,194 @@ export default function AgentActivity() {
       )}
 
       {/* Run Panel */}
-      <div className="glass-card p-5 space-y-4">
+      <div className="panel p-5 space-y-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2 flex-1 min-w-[300px]">
-            <span className="text-sm text-slate-400 font-medium shrink-0">Window ID:</span>
+            <span className="text-sm text-[var(--text-secondary-2)] font-heading font-medium shrink-0">Window ID:</span>
             <input value={windowId} onChange={e => setWindowId(e.target.value)}
               placeholder="e.g. W00464"
-              className="bg-slate-800/60 border border-white/[0.08] rounded-lg px-3 py-2 text-sm w-36 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 transition" />
+              className="panel-sm px-3 py-2 text-sm w-36 font-data text-[var(--text-primary)] placeholder-[var(--text-secondary-2)] focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition" />
             <button onClick={() => windowId && runSingle(windowId)} disabled={running || !windowId}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg text-sm font-medium hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/15">
+              className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg text-sm font-medium font-heading hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/15">
               <Play className="w-3.5 h-3.5" /> Run
             </button>
           </div>
           <button onClick={runDemo} disabled={running}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-violet-500 hover:to-purple-500 disabled:opacity-50 transition-all shadow-lg shadow-violet-500/15">
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-sm font-medium font-heading hover:from-violet-500 hover:to-purple-500 disabled:opacity-50 transition-all shadow-lg shadow-violet-500/15">
             <Bot className="w-4 h-4" /> {running ? 'Running...' : 'Run Live Demo'}
           </button>
           <button onClick={runCriticalBatch} disabled={running}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-lg text-sm font-medium hover:from-red-500 hover:to-rose-500 disabled:opacity-50 transition-all shadow-lg shadow-red-500/15">
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-lg text-sm font-medium font-heading hover:from-red-500 hover:to-rose-500 disabled:opacity-50 transition-all shadow-lg shadow-red-500/15">
             <Zap className="w-4 h-4" /> Batch Top 5
           </button>
         </div>
         {running && (
           <div className="flex items-center gap-3 text-cyan-400 animate-pulse">
             <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-            <span className="text-sm">Orchestrating — LLM planning, reflecting, executing, observing...</span>
+            <span className="text-sm font-heading">Orchestrating — LLM planning, reflecting, executing, observing...</span>
           </div>
         )}
       </div>
 
-      {/* Demo Result */}
-      {demoResult && !demoResult.error && (
-        <div className="glass-card overflow-hidden animate-slide-up gradient-border">
-          <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center gap-2">
-            <Zap className="w-4 h-4 text-amber-400" />
-            <span className="text-sm font-semibold text-white">Latest Result</span>
-            <TierBadge tier={demoResult.risk_tier} />
-            <span className="text-xs text-slate-500 font-mono ml-auto">{safeStr(demoResult.window_id || demoResult._window_id)}</span>
-          </div>
-          <div className="px-5 py-4 space-y-4">
-            <PipelineSteps decision={demoResult} />
-            {demoResult.decision_summary && <p className="text-sm text-slate-300">{safeStr(demoResult.decision_summary)}</p>}
-            <ObservationPanel decision={demoResult} />
-            {renderActions(demoResult.actions_taken, demoResult)}
-          </div>
-        </div>
-      )}
+      {view === 'overview' ? (
+        <>
+          {/* Live agent status while a run is in flight */}
+          {running && !demoResult && (
+            <LiveAgentsStrip agentStatus={liveStream.agentStatus} windowId={windowId} />
+          )}
 
-      {demoResult?.error && (
-        <div className="glass-card-sm p-4 border border-red-500/20 bg-red-500/5">
-          <p className="text-sm text-red-400">Error: {safeStr(demoResult.error)}</p>
-        </div>
-      )}
-
-      <AgentRegistry />
-
-      {/* History */}
-      {loading && (
-        <div className="flex items-center gap-3 text-slate-500 py-4">
-          <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-          Loading history...
-        </div>
-      )}
-
-      {Array.isArray(history) && history.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-300">Orchestration History ({history.length})</h2>
-            <div className="flex items-center gap-2">
-              <button onClick={refetch} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition">
-                <RefreshCw className="w-3 h-3" /> Refresh
-              </button>
-              <button onClick={async () => {
-                await deleteApi('/orchestrator/history');
-                await refetch();
-                setDemoResult(null);
-              }} className="flex items-center gap-1.5 text-xs text-red-500/70 hover:text-red-400 transition">
-                <XCircle className="w-3 h-3" /> Clear
-              </button>
+          {/* Latest result, plain-English */}
+          {demoResult && !demoResult.error && (
+            <div className="animate-slide-up">
+              <ExecutiveSummary decision={demoResult} />
             </div>
-          </div>
-          {history.map((dec, i) => (
-            <DecisionCard key={`${dec.window_id || dec._window_id}-${i}`} decision={dec}
-              expanded={expanded === i} onToggle={() => setExpanded(expanded === i ? null : i)} />
-          ))}
-        </div>
+          )}
+
+          {demoResult?.error && (
+            <div className="panel-sm p-4 border border-red-500/20 bg-red-500/5">
+              <p className="text-sm text-red-400">Error: {safeStr(demoResult.error)}</p>
+            </div>
+          )}
+
+          {/* History */}
+          {loading && (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="panel p-5 h-16 animate-pulse bg-slate-500/5" />
+              ))}
+            </div>
+          )}
+
+          {!loading && Array.isArray(history) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Recent Runs ({history.length})</h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 panel-sm px-2.5 py-1.5">
+                    <Search className="w-3.5 h-3.5 text-[var(--text-secondary-2)]" />
+                    <input value={historySearch} onChange={e => setHistorySearch(e.target.value)} placeholder="Search window/shipment"
+                      className="bg-transparent outline-none text-xs font-heading text-[var(--text-primary)] placeholder-[var(--text-secondary-2)] w-36" />
+                  </div>
+                  <select value={historyStatus} onChange={e => setHistoryStatus(e.target.value)}
+                    className="panel-sm px-2.5 py-1.5 text-xs font-heading text-[var(--text-primary)] bg-transparent outline-none cursor-pointer">
+                    <option value="ALL">All statuses</option>
+                    <option value="Awaiting Confirmation">Awaiting Confirmation</option>
+                    <option value="Action Required">Action Required</option>
+                    <option value="Resolved">Resolved</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                  <select value={historyRangeHours} onChange={e => setHistoryRangeHours(Number(e.target.value))}
+                    className="panel-sm px-2.5 py-1.5 text-xs font-heading text-[var(--text-primary)] bg-transparent outline-none cursor-pointer">
+                    <option value={0}>All time</option>
+                    <option value={24}>Last 24h</option>
+                    <option value={168}>Last 7d</option>
+                  </select>
+                  <button onClick={refetch} className="flex items-center gap-1.5 text-xs font-heading text-[var(--text-secondary-2)] hover:text-[var(--text-primary)] transition">
+                    <RefreshCw className="w-3 h-3" /> Refresh
+                  </button>
+                  <button onClick={async () => {
+                    await deleteApi('/orchestrator/history');
+                    await refetch();
+                    setDemoResult(null);
+                  }} className="flex items-center gap-1.5 text-xs font-heading text-red-500/70 hover:text-red-400 transition">
+                    <XCircle className="w-3 h-3" /> Clear
+                  </button>
+                </div>
+              </div>
+
+              {(() => {
+                const cutoff = historyRangeHours > 0 ? Date.now() - historyRangeHours * 3600 * 1000 : 0;
+                const q = historySearch.trim().toLowerCase();
+                const filtered = history.filter(dec => {
+                  if (cutoff && new Date(dec.timestamp || 0).getTime() < cutoff) return false;
+                  if (historyStatus !== 'ALL' && getRunStatus(dec).label !== historyStatus) return false;
+                  if (q) {
+                    const hay = `${safeStr(dec.window_id || dec._window_id)} ${safeStr(dec.shipment_id)} ${safeStr(dec.container_id)}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                  }
+                  return true;
+                });
+                if (history.length === 0) {
+                  return <EmptyState icon={Bot} title="No runs yet" description="Click Run Live Demo or enter a Window ID and click Run to start." />;
+                }
+                if (filtered.length === 0) {
+                  return <EmptyState icon={Search} title="No runs match your filters" description="Try a different search term, status, or time range." />;
+                }
+                return filtered.map((dec, i) => (
+                  <ExecutiveHistoryCard key={`${dec.window_id || dec._window_id}-${i}`} decision={dec}
+                    expanded={expanded === i} onToggle={() => setExpanded(expanded === i ? null : i)} />
+                ));
+              })()}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Phase 4A — Live Stream Panel */}
+          <LiveStreamPanel />
+
+          {/* Demo Result */}
+          {demoResult && !demoResult.error && (
+            <div className="panel overflow-hidden animate-slide-up gradient-border">
+              <div className="px-5 py-3.5 border-b border-[var(--card-border)] flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span className="text-sm font-semibold font-heading text-[var(--text-primary)]">Latest Result</span>
+                <TierBadge tier={demoResult.risk_tier} />
+                <span className="text-xs text-[var(--text-secondary-2)] font-data ml-auto">{safeStr(demoResult.window_id || demoResult._window_id)}</span>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <PipelineSteps decision={demoResult} />
+                {demoResult.decision_summary && <p className="text-sm text-[var(--text-secondary-2)]">{safeStr(demoResult.decision_summary)}</p>}
+                <ObservationPanel decision={demoResult} />
+                {renderActions(demoResult.actions_taken, demoResult)}
+              </div>
+            </div>
+          )}
+
+          {demoResult?.error && (
+            <div className="panel-sm p-4 border border-red-500/20 bg-red-500/5">
+              <p className="text-sm text-red-400">Error: {safeStr(demoResult.error)}</p>
+            </div>
+          )}
+
+          <AgentRegistry />
+
+          {/* History */}
+          {loading && (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="panel p-5 h-16 animate-pulse bg-slate-500/5" />
+              ))}
+            </div>
+          )}
+
+          {!loading && Array.isArray(history) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Orchestration History ({history.length})</h2>
+                <div className="flex items-center gap-2">
+                  <button onClick={refetch} className="flex items-center gap-1.5 text-xs font-heading text-[var(--text-secondary-2)] hover:text-[var(--text-primary)] transition">
+                    <RefreshCw className="w-3 h-3" /> Refresh
+                  </button>
+                  <button onClick={async () => {
+                    await deleteApi('/orchestrator/history');
+                    await refetch();
+                    setDemoResult(null);
+                  }} className="flex items-center gap-1.5 text-xs font-heading text-red-500/70 hover:text-red-400 transition">
+                    <XCircle className="w-3 h-3" /> Clear
+                  </button>
+                </div>
+              </div>
+              {history.length === 0 ? (
+                <EmptyState icon={Bot} title="No runs yet" description="Click Run Live Demo or enter a Window ID and click Run to start." />
+              ) : history.map((dec, i) => (
+                <DecisionCard key={`${dec.window_id || dec._window_id}-${i}`} decision={dec}
+                  expanded={expanded === i} onToggle={() => setExpanded(expanded === i ? null : i)} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -665,18 +752,17 @@ function ObservationPanel({ decision }) {
 function renderActions(actionsTaken, decisionMeta) {
   if (!Array.isArray(actionsTaken) || actionsTaken.length === 0) return null;
 
-  const firstPass = actionsTaken.filter(a => a?._pass === 'first_pass');
   const postApproval = actionsTaken.filter(a => a?._pass === 'post_approval');
-  const ungrouped = actionsTaken.filter(a => !a?._pass);
+  const firstPass = actionsTaken.filter(a => a?._pass !== 'post_approval');
   const hasBothPasses = firstPass.length > 0 && postApproval.length > 0;
 
   const renderGroup = (items, label, labelColor) => (
     <>
       {label && (
         <div className="col-span-2 flex items-center gap-2 pt-1">
-          <div className="h-px flex-1 bg-white/[0.06]" />
+          <div className="h-px flex-1 bg-[var(--card-border)]" />
           <span className={`text-[10px] font-bold uppercase tracking-wider ${labelColor}`}>{label}</span>
-          <div className="h-px flex-1 bg-white/[0.06]" />
+          <div className="h-px flex-1 bg-[var(--card-border)]" />
         </div>
       )}
       {items.map((a, j) => {
@@ -701,11 +787,11 @@ function renderActions(actionsTaken, decisionMeta) {
     <div className="grid grid-cols-2 gap-3">
       {hasBothPasses ? (
         <>
-          {renderGroup(firstPass, `First Pass — ${firstPass.length} tools`, 'text-slate-500')}
+          {renderGroup(firstPass, `First Pass — ${firstPass.length} tools`, 'text-[var(--text-secondary-2)]')}
           {renderGroup(postApproval, `Post-Approval — ${postApproval.length} tools`, 'text-violet-400')}
         </>
       ) : (
-        renderGroup(ungrouped.length > 0 ? ungrouped : actionsTaken, null, null)
+        renderGroup(actionsTaken, null, null)
       )}
     </div>
   );
@@ -720,9 +806,13 @@ function DecisionCard({ decision, expanded, onToggle }) {
   const isConfirmed = d._execution_mode === 'confirmed' || d.review_status === 'confirmed';
   const isAwaitingApproval = d.awaiting_approval && !isPostApproval && !isConfirmed;
   const hasCorrections = d.review_status === 'corrections_proposed';
+  const coverage = getPlanCoverage(d);
+  // Pending review already surfaces gaps via "Corrections Proposed" — only
+  // show the standalone gap badge once the run has settled.
+  const showCoverageGap = coverage?.missing.length > 0 && !isAwaitingApproval;
 
   return (
-    <div className={`glass-card overflow-hidden ${
+    <div className={`panel overflow-hidden ${
       isPostApproval ? 'ring-1 ring-emerald-500/20'
       : isAwaitingApproval ? 'ring-1 ring-amber-500/20'
       : ''
@@ -730,8 +820,8 @@ function DecisionCard({ decision, expanded, onToggle }) {
       <div role="button" tabIndex={0} className="px-5 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-white/[0.02] transition" onClick={onToggle} onKeyDown={e => e.key === 'Enter' && onToggle()}>
         <TierBadge tier={d.risk_tier || 'LOW'} />
         <div className="min-w-0">
-          <span className="font-mono text-sm font-semibold text-white">{safeStr(d.window_id || d._window_id)}</span>
-          <span className="text-xs text-slate-500 ml-2">{safeStr(d.shipment_id)} / {safeStr(d.container_id)}</span>
+          <span className="font-data text-sm font-semibold font-heading text-[var(--text-primary)]">{safeStr(d.window_id || d._window_id)}</span>
+          <span className="text-xs text-[var(--text-secondary-2)] ml-2">{safeStr(d.shipment_id)} / {safeStr(d.container_id)}</span>
         </div>
         <div className="ml-auto flex items-center gap-3 shrink-0">
           {actionsCount > 0 && <span className="flex items-center gap-1 text-xs text-emerald-400"><CheckCircle className="w-3.5 h-3.5" />{actionsCount} tools</span>}
@@ -756,14 +846,20 @@ function DecisionCard({ decision, expanded, onToggle }) {
               <Shield className="w-3 h-3" /> Execution Complete — Awaiting Confirmation
             </span>
           )}
+          {showCoverageGap && (
+            <span title={`Planned but not executed: ${coverage.missing.map(t => getAgentMeta(t).name).join(', ')}`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <AlertTriangle className="w-3 h-3" /> {coverage.missing.length} planned tool{coverage.missing.length > 1 ? 's' : ''} not executed
+            </span>
+          )}
 
-          <span className="font-mono text-xs text-slate-500">conf {Number(d.confidence || 0).toFixed(2)}</span>
-          {expanded ? <ChevronUp className="w-4 h-4 text-slate-600" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
+          <span className="font-data text-xs text-[var(--text-secondary-2)]">conf {Number(d.confidence || 0).toFixed(2)}</span>
+          {expanded ? <ChevronUp className="w-4 h-4 text-[var(--text-secondary-2)]" /> : <ChevronDown className="w-4 h-4 text-[var(--text-secondary-2)]" />}
         </div>
       </div>
 
       {expanded && (
-        <div className="px-5 pb-5 pt-2 border-t border-white/[0.06] space-y-4 animate-fade-in">
+        <div className="px-5 pb-5 pt-2 border-t border-[var(--card-border)] space-y-4 animate-fade-in">
           {isPostApproval && d._approved_by && (
             <div className="flex items-center gap-2 text-[11px] bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-3 py-2">
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
@@ -784,7 +880,7 @@ function DecisionCard({ decision, expanded, onToggle }) {
               </div>
               {Array.isArray(d.proposed_tools) && d.proposed_tools.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="text-[10px] text-slate-500 mr-1">Proposed corrections:</span>
+                  <span className="text-[10px] text-[var(--text-secondary-2)] mr-1">Proposed corrections:</span>
                   {d.proposed_tools.map(t => (
                     <span key={t} className="bg-amber-500/10 text-amber-400 text-[10px] px-2 py-0.5 rounded border border-amber-500/15">{t}</span>
                   ))}
@@ -804,7 +900,7 @@ function DecisionCard({ decision, expanded, onToggle }) {
           )}
 
           <PipelineSteps decision={d} />
-          {d.decision_summary && <p className="text-sm text-slate-300">{safeStr(d.decision_summary)}</p>}
+          {d.decision_summary && <p className="text-sm text-[var(--text-secondary-2)]">{safeStr(d.decision_summary)}</p>}
 
           {d.llm_reasoning && (
             <div className="bg-violet-500/5 border border-violet-500/10 rounded-xl p-4">
@@ -816,7 +912,7 @@ function DecisionCard({ decision, expanded, onToggle }) {
           {Array.isArray(d.draft_plan) && d.draft_plan.length > 0 && <PlanSection title="Draft Plan" steps={d.draft_plan} />}
           {Array.isArray(d.reflection_notes) && d.reflection_notes.length > 0 && (
             <div>
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Reflection</p>
+              <p className="text-[10px] font-semibold font-heading text-[var(--text-secondary-2)] uppercase tracking-wider mb-2">Reflection</p>
               {d.reflection_notes.map((n, j) => (
                 <p key={j} className={`text-xs ${
                   String(n).includes('GAP') ? 'text-amber-400/80'
@@ -836,7 +932,7 @@ function DecisionCard({ decision, expanded, onToggle }) {
 
           {actionsCount > 0 && (
             <div>
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              <p className="text-[10px] font-semibold font-heading text-[var(--text-secondary-2)] uppercase tracking-wider mb-3">
                 {isPostApproval ? 'All Tool Execution Results' : Array.isArray(d.corrective_actions) && d.corrective_actions.length > 0 ? 'First-Pass Execution Results' : 'Tool Execution Results'}
               </p>
               {renderActions(d.actions_taken, d)}
@@ -861,26 +957,22 @@ function DecisionCard({ decision, expanded, onToggle }) {
 
 function PlanSection({ title, steps, postApprovalTools }) {
   if (!Array.isArray(steps)) return null;
-  const isDeferred = (s) => {
-    const act = String(s?.action || '').toLowerCase();
-    const tool = String(s?.tool || '').toLowerCase();
-    return act.includes('deferred') || (tool === 'notification_agent' && act.includes('notification'));
-  };
+  const isDeferred = isDeferredStep;
   return (
     <div>
-      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">{title}</p>
+      <p className="text-[10px] font-semibold font-heading text-[var(--text-secondary-2)] uppercase tracking-wider mb-2">{title}</p>
       <div className="space-y-1.5">
         {steps.map((s, i) => {
           if (!s || typeof s !== 'object') return null;
           const deferred = isDeferred(s);
           return (
             <div key={i} className={`flex gap-3 text-xs items-start ${deferred ? 'pl-2 border-l-2 border-violet-500/30' : ''}`}>
-              <span className={`font-mono w-5 text-right shrink-0 pt-0.5 ${deferred ? 'text-violet-500' : 'text-slate-600'}`}>{s.step ?? i + 1}.</span>
+              <span className={`font-data w-5 text-right shrink-0 pt-0.5 ${deferred ? 'text-violet-500' : 'text-[var(--text-secondary-2)]'}`}>{s.step ?? i + 1}.</span>
               <div className="min-w-0">
-                <span className={deferred ? 'text-violet-300' : 'text-slate-300'}>{safeStr(s.action)}</span>
-                {s.tool && <span className={`ml-2 font-mono text-[10px] ${deferred ? 'text-violet-400/70' : 'text-cyan-500/70'}`}>[{s.tool}]</span>}
+                <span className={deferred ? 'text-violet-300' : 'text-[var(--text-secondary-2)]'}>{safeStr(s.action)}</span>
+                {s.tool && <span className={`ml-2 font-data text-[10px] ${deferred ? 'text-violet-400/70' : 'text-cyan-500/70'}`}>[{s.tool}]</span>}
                 {deferred && <span className="ml-2 text-[9px] bg-violet-500/10 text-violet-400 px-1.5 py-0.5 rounded border border-violet-500/20">⏳ awaits approval</span>}
-                {s.reason && <p className={`text-[10px] mt-0.5 truncate ${deferred ? 'text-violet-500/60' : 'text-slate-600'}`}>{safeStr(s.reason)}</p>}
+                {s.reason && <p className={`text-[10px] mt-0.5 truncate ${deferred ? 'text-violet-500/60' : 'text-[var(--text-secondary-2)]'}`}>{safeStr(s.reason)}</p>}
               </div>
             </div>
           );
@@ -890,10 +982,10 @@ function PlanSection({ title, steps, postApprovalTools }) {
             <p className="text-[9px] font-semibold text-violet-400 uppercase tracking-wider flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Executed after human approval</p>
             {postApprovalTools.map((t, i) => (
               <div key={i} className="flex gap-3 text-xs items-start pl-2 border-l-2 border-emerald-500/30">
-                <span className="font-mono text-emerald-500 w-5 text-right shrink-0 pt-0.5">✓</span>
+                <span className="font-data text-emerald-500 w-5 text-right shrink-0 pt-0.5">✓</span>
                 <div className="min-w-0">
                   <span className="text-emerald-300">Executed {safeStr(t)}</span>
-                  <span className="ml-2 text-emerald-400/70 font-mono text-[10px]">[{t}]</span>
+                  <span className="ml-2 text-emerald-400/70 font-data text-[10px]">[{t}]</span>
                   <span className="ml-2 text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">✓ approved</span>
                 </div>
               </div>

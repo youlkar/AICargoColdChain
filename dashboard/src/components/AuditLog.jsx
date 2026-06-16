@@ -6,8 +6,7 @@ import {
   PieChart, Pie,
 } from 'recharts';
 import { ScrollText, ChevronDown, ChevronUp, Shield, AlertTriangle, FileCheck } from 'lucide-react';
-
-const TIER_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
+import { TIER_COLORS } from '../lib/colors';
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -128,7 +127,20 @@ export default function AuditLog() {
 
       {data && data.length > 0 && (
         <div className="space-y-2">
-          {data.map((rec, i) => (
+          {data.map((rec, i) => {
+            if (rec.entry_type === 'guardrail_finding') {
+              return (
+                <div key={i} className="glass-card-sm overflow-hidden animate-fade-in px-5 py-3 flex items-center gap-3"
+                  style={{ animationDelay: `${Math.min(i * 15, 500)}ms` }}>
+                  <AlertTriangle className={`w-4 h-4 shrink-0 ${rec.severity === 'critical' ? 'text-red-400' : 'text-amber-400'}`} />
+                  <span className="font-mono text-xs font-semibold text-white">{rec.check}</span>
+                  <span className="text-[11px] text-slate-500">{rec.agent}</span>
+                  <span className="text-xs text-slate-400 truncate">{rec.message}</span>
+                  <span className="text-[10px] text-slate-600 ml-auto shrink-0">{rec.timestamp}</span>
+                </div>
+              );
+            }
+            return (
             <div key={i} className="glass-card-sm overflow-hidden animate-fade-in" style={{ animationDelay: `${Math.min(i * 15, 500)}ms` }}>
               <div className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-white/[0.02] transition"
                    onClick={() => setExpanded(expanded === i ? null : i)}>
@@ -169,7 +181,8 @@ export default function AuditLog() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

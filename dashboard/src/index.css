@@ -14,6 +14,19 @@
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
+
+  /* New design-language tokens (icy-blue / warm-alert palette) */
+  --bg-page: #0b1120;
+  --card-bg: #11192e;
+  --card-border: rgba(148, 163, 184, 0.12);
+  --card-shadow: none;
+  --text-secondary-2: #7d8aa0;
+  --accent-cyan: #22d3ee;
+  --accent-red: #f87171;
+  --accent-amber: #fbbf24;
+  --accent-emerald: #34d399;
+  --font-heading: 'Sora', system-ui, -apple-system, sans-serif;
+  --font-data: 'Roboto Mono', 'SF Mono', monospace;
 }
 
 html { font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
@@ -61,6 +74,23 @@ body {
   border-radius: 12px;
 }
 
+.panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+}
+
+.panel-sm {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+
+.font-heading { font-family: var(--font-heading); }
+.font-data { font-family: var(--font-data); }
+
 .gradient-border {
   position: relative;
 }
@@ -95,3 +125,142 @@ body {
 }
 .glass-card .nodeLabel { font-size: 11px !important; }
 .glass-card .edgeLabel { font-size: 10px !important; }
+
+/* ============================================================
+   Light theme
+   Toggled via the `light` class on <html> (see ThemeContext).
+   Re-maps the CSS variables that power .glass-card/.glass-card-sm,
+   plus the hardcoded slate/white/black/hex utility classes used
+   throughout the dashboard, to a cohesive light palette.
+   ============================================================ */
+
+html.light {
+  --bg-base: #f1f5f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #e2e8f0;
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  /* New design-language tokens, light variants */
+  --bg-page: #f7f9fb;
+  --card-bg: #ffffff;
+  --card-border: #e6ebf0;
+  --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  --text-secondary-2: #7d8aa0;
+  --accent-cyan: #0e7490;
+  --accent-red: #dc2626;
+  --accent-amber: #b45309;
+  --accent-emerald: #059669;
+}
+
+html.light body { background: var(--bg-base); color: var(--text-primary); }
+
+/* Page shell + sidebar (literal hex backgrounds) */
+html.light .bg-\[\#1e293b\] { background-color: #f8fafc; }
+
+/* Neutral text: mirror the dark-theme scale (200<->800, 300<->700, 400<->600, 500 stays) */
+html.light .text-white { color: #0f172a; }
+html.light .text-slate-200 { color: #1e293b; }
+html.light .text-slate-300 { color: #334155; }
+html.light .text-slate-400 { color: #475569; }
+html.light .text-slate-500 { color: #64748b; }
+html.light .text-slate-600 { color: #94a3b8; }
+html.light .text-slate-700 { color: #cbd5e1; }
+html.light .hover\:text-slate-200:hover { color: #1e293b; }
+html.light .hover\:text-slate-300:hover { color: #334155; }
+
+/* Subtle surface highlights: white-on-dark -> dark-on-light */
+html.light .bg-white\/\[0\.02\] { background-color: rgba(15, 23, 42, 0.03); }
+html.light .bg-white\/\[0\.03\] { background-color: rgba(15, 23, 42, 0.04); }
+html.light .bg-white\/\[0\.04\] { background-color: rgba(15, 23, 42, 0.05); }
+html.light .bg-white\/\[0\.06\] { background-color: rgba(15, 23, 42, 0.06); }
+html.light .hover\:bg-white\/\[0\.04\]:hover { background-color: rgba(15, 23, 42, 0.05); }
+
+/* Hairline borders: same flip */
+html.light .border-white\/\[0\.04\] { border-color: rgba(15, 23, 42, 0.06); }
+html.light .border-white\/\[0\.06\] { border-color: rgba(15, 23, 42, 0.08); }
+html.light .border-white\/\[0\.08\] { border-color: rgba(15, 23, 42, 0.10); }
+html.light .border-white\/\[0\.12\] { border-color: rgba(15, 23, 42, 0.14); }
+html.light .border-white\/10 { border-color: rgba(15, 23, 42, 0.12); }
+html.light .border-white\/30 { border-color: rgba(15, 23, 42, 0.25); }
+
+/* Elevated panel surfaces (bg-slate-800/700 family used inside dark cards) */
+html.light .bg-slate-800 { background-color: #ffffff; }
+html.light .bg-slate-800\/60 { background-color: rgba(255, 255, 255, 0.85); }
+html.light .bg-slate-800\/40 { background-color: rgba(255, 255, 255, 0.65); }
+html.light .bg-slate-700\/50 { background-color: rgba(241, 245, 249, 0.85); }
+html.light .bg-slate-700\/40 { background-color: rgba(241, 245, 249, 0.7); }
+html.light .bg-slate-700\/30 { background-color: rgba(241, 245, 249, 0.6); }
+html.light .bg-slate-500\/10 { background-color: rgba(100, 116, 139, 0.08); }
+html.light .border-slate-700 { border-color: #e2e8f0; }
+
+/* Accent text: lighten-on-dark (300/400) -> darken-on-light (600/700) for contrast */
+html.light .text-emerald-400,
+html.light .text-emerald-300 { color: #059669; }
+html.light .text-emerald-400\/70,
+html.light .text-emerald-300\/70 { color: color-mix(in oklab, #059669 70%, transparent); }
+html.light .text-emerald-400\/50 { color: color-mix(in oklab, #059669 55%, transparent); }
+
+html.light .text-red-400,
+html.light .text-red-500\/70 { color: #dc2626; }
+html.light .text-red-400\/70 { color: color-mix(in oklab, #dc2626 70%, transparent); }
+html.light .text-red-400\/80 { color: color-mix(in oklab, #dc2626 80%, transparent); }
+html.light .hover\:text-red-400:hover { color: #dc2626; }
+
+html.light .text-cyan-400,
+html.light .text-cyan-300 { color: #0e7490; }
+html.light .text-cyan-400\/80 { color: color-mix(in oklab, #0e7490 80%, transparent); }
+html.light .hover\:text-cyan-300:hover,
+html.light .hover\:text-cyan-400:hover { color: #0e7490; }
+
+html.light .text-violet-400,
+html.light .text-violet-300 { color: #7c3aed; }
+html.light .text-violet-300\/70 { color: color-mix(in oklab, #7c3aed 70%, transparent); }
+html.light .text-violet-500\/60 { color: color-mix(in oklab, #7c3aed 60%, transparent); }
+html.light .text-violet-200\/80 { color: color-mix(in oklab, #6d28d9 90%, transparent); }
+html.light .bg-violet-950\/30 { background-color: rgba(124, 58, 237, 0.06); }
+
+html.light .text-amber-400,
+html.light .text-amber-300 { color: #b45309; }
+html.light .text-amber-400\/80,
+html.light .text-amber-300\/70 { color: color-mix(in oklab, #b45309 80%, transparent); }
+html.light .text-amber-200\/90 { color: color-mix(in oklab, #92400e 95%, transparent); }
+
+html.light .text-blue-400 { color: #2563eb; }
+html.light .text-orange-400 { color: #ea580c; }
+html.light .text-orange-400\/80 { color: color-mix(in oklab, #ea580c 80%, transparent); }
+html.light .text-yellow-400 { color: #a16207; }
+html.light .text-rose-400 { color: #e11d48; }
+html.light .text-indigo-400 { color: #4f46e5; }
+
+/* Mermaid graph (System Graph page) renders dark-theme colors inline */
+html.light .glass-card svg.flowchart text,
+html.light .glass-card svg[id^="sys-"] text,
+html.light .glass-card svg[id^="data-"] text {
+  fill: #0f172a;
+}
+
+/* SVG fill-* utilities (chart center labels) */
+html.light .fill-white { fill: #0f172a; }
+html.light .fill-slate-400 { fill: #475569; }
+
+/* Recharts axis tick labels are set via inline fill="#64748b"/"#94a3b8";
+   stylesheet rules win over presentation attributes. */
+html.light .recharts-cartesian-axis-tick-value,
+html.light .recharts-text {
+  fill: #475569;
+}
+
+/* Disabled gradient buttons rely on opacity-50, which washes white text out
+   to near-invisibility against a light page background. Give disabled
+   buttons a flat neutral treatment instead. */
+html.light button:disabled {
+  opacity: 1 !important;
+  background-image: none !important;
+  background-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}

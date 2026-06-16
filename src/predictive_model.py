@@ -1,8 +1,5 @@
 """
-Predictive ML model for 6-hour-ahead spoilage risk.
-
-Uses XGBoost with Optuna hyperparameter tuning.
-SHAP values provide per-prediction explainability (FDA/GDP audit requirement).
+Predictive ML model for 6-hour-ahead spoilage risk using XGBoost with Optuna hyperparameter tuning.
 """
 
 from __future__ import annotations
@@ -22,6 +19,7 @@ from sklearn.metrics import (
     precision_recall_curve,
     roc_auc_score,
 )
+from sklearn.model_selection import StratifiedKFold
 from xgboost import XGBClassifier
 
 logger = logging.getLogger(__name__)
@@ -54,38 +52,40 @@ def train_model(
     y_val: pd.Series,
     n_optuna_trials: int = 30,
     seed: int = 42,
+    n_cv_folds: int = 5,
 ) -> Tuple[XGBClassifier, Dict[str, float]]:
-    """
-    Train XGBoost with Optuna hyperparameter search.
-    Returns (best_model, val_metrics).
-    """
+    # Train XGBoost with Optuna hyperparameter search, using stratified k-fold CV within X_train to score each trial.
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     scale_pos = int((y_train == 0).sum() / max((y_train == 1).sum(), 1))
 
+    # Pre-build the CV splitter once so all trials use identical folds.
+    cv = StratifiedKFold(n_splits=n_cv_folds, shuffle=True, random_state=seed)
+    X_tr_arr = X_train.values
+    y_tr_arr = y_train.values
+
     def objective(trial: optuna.Trial) -> float:
         params = {
-            "max_depth": trial.suggest_int("max_depth", 3, 8),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "n_estimators": trial.suggest_int("n_estimators", 100, 600, step=50),
+            "max_depth":        trial.suggest_int("max_depth", 3, 8),
+            "learning_rate":    trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "n_estimators":     trial.suggest_int("n_estimators", 100, 600, step=50),
             "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
-            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+            "subsample":        trial.suggest_float("subsample", 0.6, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
+            "reg_alpha":        trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
+            "reg_lambda":       trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
             "scale_pos_weight": scale_pos,
-            "eval_metric": "aucpr",
-            "random_state": seed,
+            "eval_metric":      "aucpr",
+            "random_state":     seed,
         }
-        clf = XGBClassifier(**params)
-        clf.fit(
-            X_train, y_train,
-            eval_set=[(X_val, y_val)],
-            verbose=False,
-        )
-        y_prob = clf.predict_proba(X_val)[:, 1]
-        return average_precision_score(y_val, y_prob)
+        fold_scores: List[float] = []
+        for fold_idx, (tr_idx, oof_idx) in enumerate(cv.split(X_tr_arr, y_tr_arr)):
+            clf = XGBClassifier(**params)
+            clf.fit(X_tr_arr[tr_idx], y_tr_arr[tr_idx], verbose=False)
+            y_oof_prob = clf.predict_proba(X_tr_arr[oof_idx])[:, 1]
+            fold_scores.append(average_precision_score(y_tr_arr[oof_idx], y_oof_prob))
+        return float(np.mean(fold_scores))
 
     study = optuna.create_study(direction="maximize", study_name="xgb_spoilage")
     study.optimize(objective, n_trials=n_optuna_trials, show_progress_bar=False)
@@ -93,12 +93,14 @@ def train_model(
     best_params = study.best_params
     best_params.update({
         "scale_pos_weight": scale_pos,
-        "eval_metric": "aucpr",
-        "random_state": seed,
+        "eval_metric":      "aucpr",
+        "random_state":     seed,
     })
     logger.info("Best Optuna params: %s", best_params)
-    logger.info("Best Optuna PR-AUC: %.4f", study.best_value)
+    logger.info("Best Optuna CV PR-AUC: %.4f", study.best_value)
 
+    # Final model: train on ALL training data with best params.
+    # X_val is used only as an early-stopping monitor, NOT for param selection.
     model = XGBClassifier(**best_params)
     model.fit(
         X_train, y_train,
@@ -106,15 +108,16 @@ def train_model(
         verbose=False,
     )
 
+    # Report honest val metrics — val set was never touched during Optuna.
     y_val_prob = model.predict_proba(X_val)[:, 1]
     metrics = _compute_metrics(y_val.values, y_val_prob)
-    logger.info("Validation metrics: %s", metrics)
+    logger.info("Validation metrics (honest holdout): %s", metrics)
 
     return model, metrics
 
 
 def predict(model: XGBClassifier, X: pd.DataFrame) -> np.ndarray:
-    """Return spoilage probability for each window."""
+    # Return spoilage probability for each window.
     return model.predict_proba(X)[:, 1]
 
 
@@ -123,10 +126,7 @@ def explain(
     X: pd.DataFrame,
     top_k: int = 5,
 ) -> List[List[Dict[str, Any]]]:
-    """
-    Compute SHAP values and return the top-k contributing features
-    per row as a list of dicts: [{"feature": ..., "shap_value": ...}, ...].
-    """
+    # Compute SHAP values and return the top-k contributing features per row.
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X)
 

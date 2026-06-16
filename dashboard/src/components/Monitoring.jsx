@@ -8,8 +8,8 @@ import {
 } from 'recharts';
 import { Activity, AlertTriangle, ThermometerSun, Zap, Shield, TrendingUp } from 'lucide-react';
 import TierBadge from './TierBadge';
+import { TIER_COLORS } from '../lib/colors';
 
-const TIER_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
 const TIER_BORDER = {
   CRITICAL: 'border-l-red-500 bg-red-500/[0.04]',
   HIGH: 'border-l-orange-500 bg-orange-500/[0.03]',

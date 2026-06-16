@@ -1,26 +1,21 @@
-"""
-Node functions for the orchestration agent.
-
-Each node receives OrchestratorState and returns a partial dict to merge.
-The deterministic logic follows the rules in system_prompt.md exactly.
-"""
-
+# Node functions for the orchestration agent
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from orchestrator.guardrails import GuardrailFinding
 from orchestrator.state import OrchestratorState, PlanStep, ToolResult
 from tools import TOOL_MAP
 
 logger = logging.getLogger(__name__)
 
 
-# ── 1. Interpret risk ────────────────────────────────────────────────
+# Interpret risk
 
 def interpret_risk(state: OrchestratorState) -> dict:
-    """Parse the risk engine output and classify severity."""
+    # Parse the risk engine output and classify severity.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
     score = ri.get("fused_risk_score", 0.0)
@@ -68,7 +63,7 @@ def _identify_primary_issue(rules: list, score: float, ml_prob: float) -> str:
     return f"Multiple risk signals detected (score={score:.3f})."
 
 
-# ── 2. Plan ──────────────────────────────────────────────────────────
+# Plan
 
 TIER_PLAN_TEMPLATES: Dict[str, List[Dict[str, str]]] = {
     "CRITICAL": [
@@ -118,7 +113,7 @@ TIER_PLAN_TEMPLATES: Dict[str, List[Dict[str, str]]] = {
 
 
 def plan(state: OrchestratorState) -> dict:
-    """Generate a draft action plan based on risk tier and rules."""
+    # Generate a draft action plan based on risk tier and rules.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
     templates = TIER_PLAN_TEMPLATES.get(tier, [])
@@ -154,11 +149,7 @@ def plan(state: OrchestratorState) -> dict:
 
 
 def _build_tool_input(tool_name: str, ri: dict, state: dict) -> dict:
-    """
-    Construct the baseline tool input payload from risk data.
-    These inputs are later enriched by _enrich_tool_input() during execute()
-    using results accumulated from prior tools in the cascade.
-    """
+    # Construct the baseline tool input payload from risk data. 
     base = {
         "shipment_id": ri.get("shipment_id", ""),
         "container_id": ri.get("container_id", ""),
@@ -304,7 +295,7 @@ def _build_tool_input(tool_name: str, ri: dict, state: dict) -> dict:
     return base
 
 
-# ── 3. Reflect (self-critique) ───────────────────────────────────────
+# Reflect (self-critique)
 
 REFLECTION_CHECKLIST = [
     ("compliance_covered", lambda plan: any(s["tool"] == "compliance_agent" for s in plan),
@@ -321,11 +312,7 @@ REFLECTION_CHECKLIST = [
 
 
 def reflect(state: OrchestratorState) -> dict:
-    """Post-execution reflection: check tool results against requirements AND quality.
-
-    notification_agent is always deferred to post-approval, so it is excluded
-    from mandatory-tool gap checks (it will be proposed in revise).
-    """
+    # Post-execution reflection: check tool results against requirements AND quality.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
     if tier == "LOW":
@@ -412,10 +399,10 @@ def reflect(state: OrchestratorState) -> dict:
     return {"reflection_notes": notes, "needs_revision": True}
 
 
-# ── 4. Revise ────────────────────────────────────────────────────────
+# Revise
 
 def revise(state: OrchestratorState) -> dict:
-    """Propose CORRECTIVE steps: tools that are missing, failed, quality-flagged, OR deferred."""
+    # Propose CORRECTIVE steps: tools that are missing, failed, quality-flagged, OR deferred.
     ri = state["risk_input"]
     tool_results = state.get("tool_results", [])
     notes = state.get("reflection_notes", [])
@@ -469,13 +456,10 @@ def revise(state: OrchestratorState) -> dict:
     return {"revised_plan": corrective, "plan_revised": True, "active_plan": corrective}
 
 
-# ── 5a. Cascade enrichment ───────────────────────────────────────────
+# Cascade enrichment
 
 def _compute_revised_eta(ri: dict) -> Optional[str]:
-    """
-    Compute a revised ETA string by adding current_delay_min to window_end.
-    Returns ISO string or None if window_end is not parseable.
-    """
+    # Compute a revised ETA string by adding current_delay_min to window_end.
     window_end = ri.get("window_end", "")
     delay_min = float(ri.get("current_delay_min", 0.0))
     if not window_end or delay_min == 0:
@@ -494,13 +478,7 @@ def _enrich_tool_input(
     cascade_ctx: Dict[str, Any],
     ri: dict,
 ) -> dict:
-    """
-    Dynamically patch a tool's pre-baked input using results accumulated
-    from earlier tools in the same execution run (cascade_ctx).
-
-    cascade_ctx is keyed by tool_name and holds each tool's result dict.
-    ri is the original risk_input for fallback values.
-    """
+    # Dynamically patch a tool's pre-baked input using results accumulated from earlier tools in the cascade.
     enriched = dict(base_input)
 
     if tool_name == "compliance_agent":
@@ -629,7 +607,7 @@ def _enrich_tool_input(
     return enriched
 
 
-# ── 5b. Execute ──────────────────────────────────────────────────────
+# Execute
 
 _DEPENDS_ON = {
     "notification_agent": ["cold_storage_agent"],
@@ -643,15 +621,8 @@ DEFERRED_FIRST_PASS = {"notification_agent"}
 
 
 def execute(state: OrchestratorState) -> dict:
-    """
-    Run each tool in the active plan sequentially with result-awareness.
-
-    Key behaviours:
-    - cascade_ctx accumulates every tool result for downstream enrichment.
-    - notification_agent is DEFERRED to post-approval (human must validate
-      the response before stakeholders are notified).
-    - approval_workflow is SKIPPED (handled by the human_review node).
-    """
+    # Run each tool in the active plan sequentially with result-awareness.
+    
     active = state.get("active_plan") or state.get("draft_plan", [])
     ri = state.get("risk_input", {})
     results: List[ToolResult] = []
@@ -731,18 +702,15 @@ def execute(state: OrchestratorState) -> dict:
     }
 
 
-# ── 5c. Re-Execute (corrective actions from revise) ──────────────────
+# Re-Execute (corrective actions from revise)
 
 def re_execute(state: OrchestratorState) -> dict:
-    """Run the corrective steps from the revised plan.
-
-    Only executes tools that are NEW or FAILED in the first pass.
-    Appends results to the main tool_results list.
-    """
+    # Run the corrective steps from the revised plan.
     revised = state.get("revised_plan") or state.get("active_plan", [])
     ri = state.get("risk_input", {})
     first_results = state.get("tool_results", [])
     cascade_ctx = dict(state.get("cascade_context", {}))
+    deferred = set(state.get("deferred_tools", [])) | DEFERRED_FIRST_PASS
 
     results: List[ToolResult] = list(first_results)
     errors: List[str] = list(state.get("execution_errors", []))
@@ -757,6 +725,9 @@ def re_execute(state: OrchestratorState) -> dict:
             continue
         tool_name = step.get("tool", "")
         if not tool_name or tool_name == "approval_workflow":
+            continue
+        if tool_name in deferred:
+            logger.info("RE_EXECUTE  deferring %s to post-approval", tool_name)
             continue
         if tool_name not in TOOL_MAP:
             errors.append(f"Corrective: tool '{tool_name}' not available")
@@ -783,19 +754,28 @@ def re_execute(state: OrchestratorState) -> dict:
             results.append(tr)
             revised_results.append(tr)
 
-    logger.info("RE_EXECUTE  %d corrective tools run", len(revised_results))
+    new_replan_count = state.get("replan_count", 0) + 1
+    # Append this pass's results to the cross-pass history so reflect always
+    # has the full picture on every loop iteration.
+    history: List[Dict[str, Any]] = list(state.get("execution_history") or [])
+    history.extend([dict(r) for r in revised_results])
+
+    logger.info("RE_EXECUTE  %d corrective tools run (replan_count now %d)",
+                len(revised_results), new_replan_count)
     return {
         "tool_results": results,
         "execution_errors": errors,
         "cascade_context": cascade_ctx,
         "revised_tool_results": revised_results,
+        "replan_count": new_replan_count,
+        "execution_history": history,
     }
 
 
-# ── 6. Build fallback ────────────────────────────────────────────────
+# Build fallback
 
 def build_fallback(state: OrchestratorState) -> dict:
-    """Create a minimal fallback plan in case primary plan fails."""
+    # Create a minimal fallback plan in case primary plan fails.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
     if tier == "LOW":
@@ -814,10 +794,10 @@ def build_fallback(state: OrchestratorState) -> dict:
     return {"fallback_plan": fallback}
 
 
-# ── 7. Compile output ────────────────────────────────────────────────
+# Compile output
 
 def compile_output(state: OrchestratorState) -> dict:
-    """Assemble the final structured output for the always-review pipeline."""
+    # Assemble the final structured output for the always-review pipeline.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
 
@@ -912,6 +892,7 @@ def compile_output(state: OrchestratorState) -> dict:
         "observation": state.get("observation", ""),
         "observation_issues": state.get("observation_issues", []),
         "replan_count": state.get("replan_count", 0),
+        "execution_history": state.get("execution_history", []),
         "audit_log_summary": (
             f"{total_count} tools executed, {len(errors)} errors, tier={tier}"
         ),
@@ -919,6 +900,77 @@ def compile_output(state: OrchestratorState) -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    logger.info("OUTPUT  tier=%s confidence=%.2f tools=%d review=%s",
-                tier, confidence, total_count, review_status)
-    return {"final_output": output, "decision_summary": summary, "confidence": confidence}
+    # Collect tool-level guardrail findings (e.g. prompt injection from compliance_agent)
+    tool_level_findings: list[GuardrailFinding] = []
+    for r in tool_results + revised_results:
+        finding = (r.get("result") or {}).get("guardrail_finding")
+        if finding and isinstance(finding, dict):
+            tool_level_findings.append(finding)
+
+    all_findings = state.get("guardrail_findings", []) + tool_level_findings
+    output["guardrail_findings"] = all_findings
+
+    # Persist non-passed findings to audit JSONL for dashboard surfacing
+    non_passed = [f for f in all_findings if isinstance(f, dict) and not f.get("passed", True)]
+    if non_passed:
+        from pathlib import Path
+        audit_dir = Path("audit_logs")
+        audit_dir.mkdir(exist_ok=True)
+        with open(audit_dir / "guardrail_findings.jsonl", "a") as gf:
+            for f in non_passed:
+                import json as _json
+                gf.write(_json.dumps({
+                    **f,
+                    "entry_type": "guardrail_finding",
+                    "shipment_id": ri.get("shipment_id"),
+                    "window_id": ri.get("window_id"),
+                }) + "\n")
+
+    node_latencies = state.get("node_latencies") or {}
+    token_breakdown = state.get("token_breakdown") or {}
+    total_latency_ms = sum(v for v in node_latencies.values() if isinstance(v, (int, float)))
+    total_tokens = sum(
+        v.get("tokens", 0) for v in token_breakdown.values() if isinstance(v, dict)
+    )
+    total_cost_usd = sum(
+        v.get("cost_usd", 0.0) for v in token_breakdown.values() if isinstance(v, dict)
+    )
+
+    output["node_latencies"] = node_latencies
+    output["token_breakdown"] = token_breakdown
+    output["total_latency_ms"] = round(total_latency_ms, 1)
+    output["total_tokens"] = total_tokens
+    output["total_cost_usd"] = round(total_cost_usd, 6)
+
+    # Persist to Supabase (best-effort, non-fatal)
+    try:
+        from src.supabase_client import write_agent_run_metrics
+        write_agent_run_metrics({
+            "run_id": state.get("thread_id", ""),
+            "shipment_id": ri.get("shipment_id"),
+            "window_id": ri.get("window_id"),
+            "risk_tier": tier,
+            "started_at": state.get("run_started_at"),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "total_latency_ms": round(total_latency_ms, 1),
+            "total_tokens": total_tokens,
+            "total_cost_usd": round(total_cost_usd, 6),
+            "node_latencies": node_latencies,
+            "token_breakdown": token_breakdown,
+            "guardrail_findings": all_findings,
+            "guardrail_escalated": any(
+                not f.get("passed", True) and f.get("severity") == "critical"
+                for f in all_findings if isinstance(f, dict)
+            ),
+        })
+    except Exception as exc:
+        logger.warning("write_agent_run_metrics failed (non-fatal): %s", exc)
+
+    logger.info("OUTPUT  tier=%s confidence=%.2f tools=%d review=%s guardrail_findings=%d latency=%.0fms",
+                tier, confidence, total_count, review_status, len(all_findings), total_latency_ms)
+    return {
+        "final_output": output,
+        "decision_summary": summary,
+        "confidence": confidence,
+        "guardrail_findings": tool_level_findings,
+    }

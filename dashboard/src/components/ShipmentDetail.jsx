@@ -7,8 +7,7 @@ import {
 } from 'recharts';
 import { ArrowLeft, Thermometer, TrendingUp, Package, AlertTriangle } from 'lucide-react';
 import TierBadge from './TierBadge';
-
-const TIER_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
+import { TIER_COLORS } from '../lib/colors';
 
 function ChartTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;

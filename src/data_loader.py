@@ -1,9 +1,5 @@
 """
 Data loading, validation, and shipment-stratified train/val/test splitting.
-
-The prediction unit is (shipment_id, container_id, window_id).
-One container always carries exactly one product type.
-Splitting is done by shipment_id to prevent temporal leakage.
 """
 
 from __future__ import annotations
@@ -40,10 +36,7 @@ def load_product_profiles(path: Path | None = None) -> Dict[str, dict]:
 
 
 def load_raw(csv_path: Path | None = None, force_csv: bool = False) -> pd.DataFrame:
-    """
-    Load telemetry data. Tries Supabase window_features first, falls back to local CSV.
-    Set force_csv=True to skip Supabase entirely.
-    """
+    # Load telemetry data. Try Supabase window_features first, then fallback to local CSV.
     if not force_csv:
         try:
             from src.supabase_client import fetch_window_features, is_available
@@ -63,7 +56,7 @@ def load_raw(csv_path: Path | None = None, force_csv: bool = False) -> pd.DataFr
 
 
 def load_product_profiles_smart() -> Dict[str, dict]:
-    """Load product profiles from Supabase, fall back to local JSON."""
+    # Load product profiles from Supabase, fall back to local JSON.
     try:
         from src.supabase_client import load_profiles_with_fallback
         return load_profiles_with_fallback()
@@ -72,7 +65,7 @@ def load_product_profiles_smart() -> Dict[str, dict]:
 
 
 def validate(df: pd.DataFrame) -> pd.DataFrame:
-    """Run structural and semantic checks, log warnings, return cleaned df."""
+    # Run structural and semantic checks, log warnings, return cleaned df.
     missing = set(EXPECTED_COLUMNS) - set(df.columns)
     if missing:
         raise ValueError(f"Missing columns: {missing}")
@@ -105,44 +98,34 @@ def shipment_stratified_split(
     val_frac: float = 0.2,
     seed: int = 42,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Split by shipment_id so no shipment's windows leak across sets.
-    Stratification is approximate: we stratify on the *shipment-level*
-    majority label (whether the shipment contains any positive window).
-    """
-    ship_label = (
-        df.groupby("shipment_id")[TARGET]
-        .max()
-        .rename("has_positive")
-    )
+    # Temporal split: train on the earliest windows, val on the middle period, test on the most recent period.
+    df = df.sort_values("window_start").reset_index(drop=True)
 
-    shipments = ship_label.index.to_numpy()
-    labels = ship_label.values
+    # Assign each shipment to a split based on its earliest window.
+    first_window = df.groupby("shipment_id")["window_start"].min().sort_values()
 
-    train_ships, temp_ships = train_test_split(
-        shipments, test_size=1 - train_frac,
-        stratify=labels, random_state=seed,
-    )
-    temp_labels = ship_label.loc[temp_ships].values
-    relative_val = val_frac / (1 - train_frac)
-    val_ships, test_ships = train_test_split(
-        temp_ships, test_size=1 - relative_val,
-        stratify=temp_labels, random_state=seed,
-    )
+    n = len(first_window)
+    train_end_idx = int(n * train_frac)
+    val_end_idx   = int(n * (train_frac + val_frac))
 
-    train_set = set(train_ships)
-    val_set = set(val_ships)
-    test_set = set(test_ships)
+    train_ships = set(first_window.iloc[:train_end_idx].index)
+    val_ships   = set(first_window.iloc[train_end_idx:val_end_idx].index)
+    test_ships  = set(first_window.iloc[val_end_idx:].index)
 
-    df_train = df[df["shipment_id"].isin(train_set)].copy()
-    df_val = df[df["shipment_id"].isin(val_set)].copy()
-    df_test = df[df["shipment_id"].isin(test_set)].copy()
+    df_train = df[df["shipment_id"].isin(train_ships)].copy()
+    df_val   = df[df["shipment_id"].isin(val_ships)].copy()
+    df_test  = df[df["shipment_id"].isin(test_ships)].copy()
 
     for name, part in [("train", df_train), ("val", df_val), ("test", df_test)]:
-        pos_rate = part[TARGET].mean()
+        if part.empty:
+            logger.warning("  %s: EMPTY — dataset may be too small for a 3-way temporal split", name)
+            continue
         logger.info(
-            "  %s: %d rows, %d shipments, %.1f%% positive",
-            name, len(part), part["shipment_id"].nunique(), pos_rate * 100,
+            "  %s: %d rows, %d shipments, %.1f%% positive | %s → %s",
+            name, len(part), part["shipment_id"].nunique(),
+            part[TARGET].mean() * 100,
+            part["window_start"].min().date(),
+            part["window_start"].max().date(),
         )
 
     return df_train, df_val, df_test
@@ -152,7 +135,7 @@ def load_and_split(
     csv_path: Path | None = None,
     profiles_path: Path | None = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, dict]]:
-    """Convenience: load, validate, split, return (train, val, test, profiles)."""
+    # Convenience: load, validate, split, return (train, val, test, profiles).
     df = load_raw(csv_path)
     df = validate(df)
     profiles = load_product_profiles(profiles_path)

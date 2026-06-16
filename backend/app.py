@@ -1,14 +1,6 @@
 """
 FastAPI backend for AI Cargo Monitoring.
-
-Serves the risk-scored data to the React dashboard and provides
-tool-execution endpoints that the orchestrator will call.
-
-Includes an embedded Supabase Realtime stream listener that
-automatically detects new window_features rows, scores them, and
-triggers orchestration — no separate process or hardcoded URLs needed.
-
-Run:  uvicorn backend.app:app --reload --port 8000
+Serves the risk-scored data to the React dashboard and provides tool-execution endpoints that the orchestrator will call.
 """
 
 from __future__ import annotations
@@ -25,6 +17,8 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+import orchestrator.llm_provider as prov
+
 
 from backend.models import (
     ApprovalDecision,
@@ -37,43 +31,119 @@ from backend.models import (
 from tools.approval_workflow import _PENDING_APPROVALS, decide as approve_decide, get_pending, get_all as get_all_approvals
 from tools.triage_agent import _execute as triage_execute, _enrich_shipment
 from tools import TOOL_MAP
-from orchestrator.graph import run_orchestrator, get_graph_mermaid, get_mode
+from orchestrator.graph import (
+    run_orchestrator,
+    run_orchestrator_async,
+    resume_orchestrator,
+    get_orchestrator_state,
+    stream_orchestration,
+    get_graph_mermaid,
+    get_mode,
+)
 from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name
 from src.context_assembler import build_window_context
 from src.data_loader import load_product_profiles
 
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
+
+# LangSmith tracing enabled automatically 
+if os.environ.get("LANGCHAIN_TRACING_V2") == "true":
+    logger.info("LangSmith tracing enabled (project: %s)",
+                os.environ.get("LANGCHAIN_PROJECT", "default"))
 
 BASE = Path(__file__).resolve().parent.parent
 SCORED_CSV = BASE / "artifacts" / "scored_windows.csv"
 AUDIT_DIR = BASE / "audit_logs"
 
 
-# ── Embedded Supabase stream listener ─────────────────────────────
+# Embedded Supabase stream listener
 
 _TIERS_TO_ORCHESTRATE = {"MEDIUM", "HIGH", "CRITICAL"}
 _stream_stats = {"ingested": 0, "orchestrated": 0, "errors": 0}
 
+# Leg window cache: stores the last 3 raw window records per leg_id.
+_leg_window_cache: dict = {} 
+_LEG_CACHE_SIZE = 3          
+
+
+def _get_ml_model():
+    # Load (and cache) the XGBoost model for real-time inference.
+    from src.predictive_model import load_model
+    if not hasattr(_get_ml_model, "_model"):
+        try:
+            _get_ml_model._model = load_model()
+            logger.info("ML model loaded for real-time inference")
+        except Exception as exc:
+            logger.warning("ML model not available: %s", exc)
+            _get_ml_model._model = None
+    return _get_ml_model._model
+
+
+def _ml_score_from_model(engineered_row: "pd.Series") -> float:
+    import pandas as pd
+    from src.feature_engineering import LEAKY_COLS, REFERENCE_COLS, ID_COLS, TARGET
+
+    model = _get_ml_model()
+    if model is None:
+        return None  # signal caller to use deterministic fallback
+
+    row_df = pd.DataFrame([engineered_row])
+
+    # One-hot encode categoricals (same logic as prepare_ml_arrays)
+    phase_dummies = pd.get_dummies(row_df["transit_phase"], prefix="phase", dtype=int)
+    prod_dummies  = pd.get_dummies(row_df["product_id"],   prefix="prod",  dtype=int)
+
+    exclude = set(ID_COLS + LEAKY_COLS + REFERENCE_COLS + [TARGET])
+    numeric_cols = [c for c in row_df.select_dtypes(include="number").columns
+                    if c not in exclude]
+    X = pd.concat([row_df[numeric_cols], phase_dummies, prod_dummies], axis=1)
+
+    # Align to the exact feature set the model was trained on
+    X = X.reindex(columns=model.feature_names_in_, fill_value=0)
+
+    return float(model.predict_proba(X)[:, 1][0])
+
 
 async def _process_stream_record(record: dict):
-    """Score a streamed row and trigger orchestration if risky."""
+    # Score a streamed row and trigger orchestration if risky.
     from src.feature_engineering import engineer_features
     from src.deterministic_engine import score_row
     from src.risk_fusion import fuse_scores
 
     window_id = record.get("window_id", "?")
+    leg_id    = record.get("leg_id", "")
     try:
         profiles = _get_profiles()
-        row_df = pd.DataFrame([record])
+
+        prior = _leg_window_cache.get(leg_id, [])
+        all_records = prior + [record]
+        row_df = pd.DataFrame(all_records)
         for col in ("window_start", "window_end"):
             if col in row_df.columns:
                 row_df[col] = pd.to_datetime(row_df[col], errors="coerce")
         row_df = engineer_features(row_df, profiles)
-        row = row_df.iloc[0]
+        row = row_df.iloc[-1]  # current window is always the last row
+
+        # Keep only the last _LEG_CACHE_SIZE raw records for this leg
+        _leg_window_cache[leg_id] = all_records[-_LEG_CACHE_SIZE:]
 
         det_score, det_results = score_row(row, profiles)
         rules_fired = [r.rule_name for r in det_results if r.fired]
-        ml_score = float(record.get("ml_score", det_score * 0.8))
+
+        # Call the actual XGBoost model instead of det_score * 0.8
+        ml_score_computed = _ml_score_from_model(row)
+        if ml_score_computed is not None:
+            ml_score = ml_score_computed
+            logger.debug("STREAM_ML  %s ml_score=%.4f (from XGBoost)", window_id, ml_score)
+        else:
+            # Model not loaded — fall back to deterministic proxy
+            ml_score = float(det_score * 0.8)
+            logger.debug("STREAM_ML  %s ml_score=%.4f (det fallback)", window_id, ml_score)
+
         final_score, risk_tier, actions, requires_human = fuse_scores(det_score, ml_score)
 
         scored = {
@@ -94,15 +164,15 @@ async def _process_stream_record(record: dict):
             except HTTPException:
                 risk_data = _build_risk_input_from_record(record, final_score, risk_tier, rules_fired, ml_score)
 
-            decision = run_orchestrator(risk_data)
+            decision = await run_orchestrator_async(risk_data)
             decision["_window_id"] = window_id
-            _orchestrator_history.append(decision)
-            if len(_orchestrator_history) > _MAX_HISTORY:
-                _orchestrator_history[:] = _orchestrator_history[-_MAX_HISTORY:]
+            await _append_history(decision)
             await _broadcast({"type": "orchestrator_decision", "decision": decision})
             _stream_stats["orchestrated"] += 1
-            logger.info("STREAM_ORCH   %s tier=%s actions=%d",
-                        window_id, risk_tier, len(decision.get("actions_taken", [])))
+            logger.info("STREAM_ORCH   %s tier=%s awaiting=%s actions=%d",
+                        window_id, risk_tier,
+                        decision.get("awaiting_approval", False),
+                        len(decision.get("actions_taken", [])))
 
     except Exception as e:
         _stream_stats["errors"] += 1
@@ -110,7 +180,7 @@ async def _process_stream_record(record: dict):
 
 
 def _build_risk_input_from_record(record, final_score, risk_tier, rules_fired, ml_score):
-    """Build a minimal risk_input when the window isn't in the scored CSV."""
+    # Build a minimal risk_input when the window isn't in the scored CSV.
     return {
         "window_id": record.get("window_id"),
         "shipment_id": record.get("shipment_id"),
@@ -134,7 +204,7 @@ def _build_risk_input_from_record(record, final_score, risk_tier, rules_fired, m
 
 
 async def _stream_listener_loop():
-    """Background task: subscribe to Supabase Realtime and process INSERTs."""
+    # Background task: subscribe to Supabase Realtime and process INSERTs.
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_KEY", "")
     if not url or not key:
@@ -188,6 +258,17 @@ async def _stream_listener_loop():
 
 @asynccontextmanager
 async def lifespan(app_instance):
+    _get_ml_model()  # load eagerly so failures surface at startup, not on first request
+
+    try:
+        from src.supabase_client import fetch_orchestrator_runs
+        rows = await asyncio.to_thread(fetch_orchestrator_runs, _MAX_HISTORY)
+        if rows:
+            _orchestrator_history.extend(rows)
+            logger.info("Loaded %d orchestrator runs from Supabase", len(rows))
+    except Exception as exc:
+        logger.warning("orchestrator_runs load failed: %s", exc)
+
     task = asyncio.create_task(_stream_listener_loop())
     yield
     task.cancel()
@@ -199,19 +280,30 @@ async def lifespan(app_instance):
 
 app = FastAPI(title="AI Cargo Monitor", version="1.0.0", lifespan=lifespan)
 
+_cors_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+if os.environ.get("FRONTEND_URL"):
+    _cors_origins.append(os.environ["FRONTEND_URL"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ],
+    allow_origins=_cors_origins,
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── In-memory caches ─────────────────────────────────────────────────
+# Health check
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "version": "1.0.0"}
+
+
+# In-memory caches
 
 _df: Optional[pd.DataFrame] = None
 _profiles: Optional[dict] = None
@@ -233,7 +325,7 @@ def _get_profiles() -> dict:
     return _profiles
 
 
-# ── WebSocket connections ────────────────────────────────────────────
+# WebSocket connections
 
 _ws_clients: List[WebSocket] = []
 
@@ -248,6 +340,7 @@ async def _broadcast(event: dict):
 
 @app.websocket("/ws/events")
 async def ws_events(websocket: WebSocket):
+    """Broadcast channel — all clients receive all system events."""
     await websocket.accept()
     _ws_clients.append(websocket)
     try:
@@ -257,7 +350,39 @@ async def ws_events(websocket: WebSocket):
         _ws_clients.remove(websocket)
 
 
-# ── Risk overview ────────────────────────────────────────────────────
+@app.websocket("/ws/stream/{window_id}")
+async def ws_stream_orchestration(websocket: WebSocket, window_id: str):
+    await websocket.accept()
+    try:
+        risk_data = score_window(window_id)
+    except HTTPException as exc:
+        await websocket.send_json({"type": "stream_error",
+                                   "error": f"Window {window_id} not found: {exc.detail}"})
+        await websocket.close()
+        return
+
+    try:
+        decision = await stream_orchestration(risk_data, websocket.send_json)
+        if decision:
+            decision["_window_id"] = window_id
+            await _append_history(decision)
+            await _broadcast({"type": "orchestrator_decision", "decision": decision})
+    except WebSocketDisconnect:
+        logger.info("Stream client disconnected mid-run for window %s", window_id)
+    except Exception as exc:
+        logger.error("ws_stream_orchestration error: %s", exc)
+        try:
+            await websocket.send_json({"type": "stream_error", "error": str(exc)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# Risk overview
 
 @app.get("/api/risk/overview", response_model=RiskOverview)
 def risk_overview():
@@ -276,7 +401,7 @@ def risk_overview():
     )
 
 
-# ── Shipments ────────────────────────────────────────────────────────
+# Shipments
 
 @app.get("/api/shipments", response_model=List[ShipmentSummary])
 def list_shipments(risk_tier: Optional[str] = Query(None)):
@@ -296,7 +421,7 @@ def shipment_windows(shipment_id: str):
     return [_row_to_window(row) for _, row in sub.iterrows()]
 
 
-# ── Windows ──────────────────────────────────────────────────────────
+# Windows
 
 @app.get("/api/windows", response_model=List[WindowRisk])
 def list_windows(
@@ -324,18 +449,12 @@ def get_window(window_id: str):
     return _row_to_window(row.iloc[0])
 
 
-# ── Risk engine output (for orchestrator) ────────────────────────────
+# Risk engine output (for orchestrator)
 
 @app.get("/api/risk/score-window/{window_id}")
 def score_window(window_id: str):
-    """
-    Return the enriched risk engine output for a single window in the format
-    expected by the orchestrator (system_prompt.md input contract).
+    # Return the enriched risk engine output for a single window in the format
 
-    Extends the base risk fields with cascade context:
-      delay_ratio, delay_class, hours_to_breach, facility, product_cost,
-      window_end (for ETA computation in the cascade).
-    """
     df = _get_df()
     profiles = _get_profiles()
 
@@ -380,9 +499,8 @@ def score_window(window_id: str):
     }
 
 
-# ── Audit logs ───────────────────────────────────────────────────────
-
-@app.get("/api/audit-logs", response_model=List[AuditRecord])
+# Audit logs
+@app.get("/api/audit-logs")
 def list_audit_logs(
     shipment_id: Optional[str] = Query(None),
     risk_tier: Optional[str] = Query(None),
@@ -396,7 +514,7 @@ def list_audit_logs(
     return records[:limit]
 
 
-# ── Tool execution ───────────────────────────────────────────────────
+# Tool execution
 
 @app.post("/api/tools/{tool_name}/execute")
 async def execute_tool(tool_name: str, payload: Dict[str, Any]):
@@ -408,7 +526,7 @@ async def execute_tool(tool_name: str, payload: Dict[str, Any]):
     return result
 
 
-# ── Approval workflow ────────────────────────────────────────────────
+# Approval workflow
 
 @app.get("/api/approvals/pending", response_model=List[ApprovalRequest])
 def pending_approvals():
@@ -417,13 +535,13 @@ def pending_approvals():
 
 @app.get("/api/approvals/all")
 def all_approvals():
-    """Return ALL approvals (pending, approved, rejected, executed)."""
+    # Return ALL approvals (pending, approved, rejected, executed).
     return get_all_approvals()
 
 
 @app.delete("/api/approvals")
 def clear_approvals():
-    """Clear all approval records."""
+    # Clear all approval records.
     from tools.approval_workflow import _PENDING_APPROVALS
     count = len(_PENDING_APPROVALS)
     _PENDING_APPROVALS.clear()
@@ -450,11 +568,7 @@ async def decide_approval(approval_id: str, body: ApprovalDecision):
 
 @app.post("/api/approvals/{approval_id}/confirm")
 async def confirm_approved(approval_id: str, body: Dict[str, Any] = None):
-    """Confirm that first-pass execution was sufficient — no re-execution.
-
-    The human reviewed the results and decided corrections are not needed.
-    Closes the review without running any additional tools.
-    """
+    # Confirm that first-pass execution was sufficient — no additional tools needed.
     from tools.approval_workflow import _PENDING_APPROVALS
     record = _PENDING_APPROVALS.get(approval_id)
     if not record:
@@ -463,147 +577,107 @@ async def confirm_approved(approval_id: str, body: Dict[str, Any] = None):
         raise HTTPException(400, f"Approval {approval_id} cannot be confirmed (status={record.get('status')})")
 
     body = body or {}
-    record["status"] = "confirmed"
-    record["decided_at"] = datetime.now(timezone.utc).isoformat()
-    record["decided_by"] = body.get("decided_by", "operator")
-    record["decision"] = "confirmed"
-    record["executed_tools"] = []
+    decided_by = body.get("decided_by", "operator")
 
-    window_id = record.get("window_id") or record.get("shipment_id", "")
+    final_output = await resume_orchestrator(approval_id, "confirmed", decided_by)
 
-    for i, old in enumerate(_orchestrator_history):
-        old_wid = old.get("_window_id") or old.get("window_id", "")
-        old_aid = old.get("approval_id")
-        if old_aid == approval_id or (old_wid == window_id and old.get("awaiting_approval")):
-            old["awaiting_approval"] = False
-            old["_execution_mode"] = "confirmed"
-            old["_approved_by"] = record["decided_by"]
-            old["_approved_at"] = record["decided_at"]
-            old["review_status"] = "confirmed"
-            old["decision_summary"] = old.get("decision_summary", "").replace(
-                "Awaiting human review.", "Human confirmed — first-pass response adequate."
-            ).replace(
-                "Awaiting human confirmation.", "Human confirmed — response adequate."
-            )
-            _orchestrator_history[i] = old
-            break
+    final_output["_window_id"] = record.get("window_id", "")
+    final_output["_approval_id"] = approval_id
+    final_output["_execution_mode"] = "confirmed"
+    final_output["awaiting_approval"] = False
+    final_output["review_status"] = "confirmed"
 
-    await _broadcast({"type": "approval_confirmed", "approval_id": approval_id, "record": record})
-    return record
+    await _replace_or_append_history(approval_id, record.get("window_id", ""), final_output)
+    await _broadcast({"type": "approval_confirmed", "approval_id": approval_id, "record": final_output})
+    return final_output
 
 
 @app.post("/api/approvals/{approval_id}/execute")
 async def execute_approved(approval_id: str, body: Dict[str, Any] = None):
-    """Execute corrective/additional tools after human review.
-
-    The human selects which tools to run. Replaces the original history entry
-    with the post-approval execution result, preserving the planning data.
-    """
+    # Execute post-approval: resume graph from checkpoint, then run deferred tools.
     from tools.approval_workflow import _PENDING_APPROVALS
-    from orchestrator.graph import run_orchestrator_selective
     record = _PENDING_APPROVALS.get(approval_id)
     if not record:
         raise HTTPException(404, f"Approval {approval_id} not found")
     if record.get("status") not in ("pending", "approved"):
-        raise HTTPException(400, f"Approval {approval_id} is not approved (status={record.get('status')})")
+        raise HTTPException(400, f"Approval {approval_id} is not pending/approved (status={record.get('status')})")
 
-    window_id = record.get("window_id") or record.get("shipment_id", "")
     body = body or {}
-    selected_tools = body.get("selected_tools", [])
-    selected_tools = [t for t in selected_tools if t != "approval_workflow"]
+    decided_by = body.get("decided_by", "operator")
+    selected_tools = [t for t in (body.get("selected_tools") or []) if t != "approval_workflow"]
 
+    # If no tools explicitly selected, fall back to the proposed deferred set.
     if not selected_tools:
-        proposed = record.get("proposed_corrections", [])
-        deferred = record.get("proposed_deferred", [])
-        combined = [t for t in (proposed + deferred) if t != "approval_workflow"]
-        if combined:
-            selected_tools = combined
-        else:
-            return await confirm_approved(approval_id, body)
+        selected_tools = [
+            t for t in (record.get("proposed_corrections", []) + record.get("proposed_deferred", []))
+            if t != "approval_workflow"
+        ]
 
-    try:
-        risk_data = score_window(window_id)
-    except Exception:
-        risk_data = {
-            "shipment_id": record.get("shipment_id"),
-            "window_id": window_id,
-            "container_id": record.get("container_id"),
-            "risk_tier": record.get("risk_tier", "HIGH"),
-        }
+    # 1. Resume the graph from checkpoint.
+    final_output = await resume_orchestrator(approval_id, "approved", decided_by)
 
-    decision = run_orchestrator_selective(risk_data, selected_tools)
+    # 2. Run any deferred tools (e.g. notification_agent) the operator selected
+    #    that weren't executed inside the graph loop.
+    post_approval_results: List[Dict[str, Any]] = []
+    if selected_tools:
+        # Pull the full state from checkpoint so tool inputs have cascade context.
+        ckpt = await get_orchestrator_state(approval_id)
+        already_run = {r["tool"] for r in ckpt.get("tool_results", [])}
+        from orchestrator.nodes import _build_tool_input
+
+        for tool_name in selected_tools:
+            if tool_name not in TOOL_MAP or tool_name in already_run:
+                continue
+            try:
+                ri = ckpt.get("risk_input", record)
+                tool_input = _build_tool_input(tool_name, ri, ckpt)
+                result = TOOL_MAP[tool_name].invoke(tool_input)
+                post_approval_results.append({
+                    "tool": tool_name, "result": result,
+                    "success": True, "_pass": "post_approval",
+                })
+                logger.info("POST_APPROVAL_TOOL  %s → success", tool_name)
+            except Exception as exc:
+                logger.error("POST_APPROVAL_TOOL  %s failed: %s", tool_name, exc)
+                post_approval_results.append({
+                    "tool": tool_name, "result": {"error": str(exc)},
+                    "success": False, "_pass": "post_approval",
+                })
 
     record["status"] = "executed"
     record["executed_at"] = datetime.now(timezone.utc).isoformat()
     record["executed_tools"] = selected_tools
+    record["post_approval_actions"] = post_approval_results
 
-    decision["_window_id"] = window_id
-    decision["_approval_id"] = approval_id
-    decision["_execution_mode"] = "post_approval"
-    decision["_approved_by"] = record.get("decided_by", "operator")
-    decision["_approved_at"] = record.get("decided_at", "")
-    decision["awaiting_approval"] = False
-    decision["review_status"] = "executed"
+    final_output["_window_id"] = record.get("window_id", "")
+    final_output["_approval_id"] = approval_id
+    final_output["_execution_mode"] = "post_approval_checkpoint_resume"
+    final_output["awaiting_approval"] = False
+    final_output["review_status"] = "executed"
 
-    first_pass_actions = record.get("first_pass_actions", [])
-    post_approval_actions = decision.get("actions_taken", [])
-    for a in post_approval_actions:
-        if isinstance(a, dict):
-            a["_pass"] = "post_approval"
-    decision["actions_taken"] = first_pass_actions + post_approval_actions
-    decision["first_pass_actions"] = first_pass_actions
-    decision["post_approval_actions"] = post_approval_actions
+    if post_approval_results:
+        existing = list(final_output.get("actions_taken") or [])
+        final_output["actions_taken"] = existing + post_approval_results
+        final_output["post_approval_actions"] = post_approval_results
 
-    saved_cascade = record.get("cascade_context", {})
-    if saved_cascade:
-        merged_cascade = dict(saved_cascade)
-        merged_cascade.update(decision.get("cascade_context", {}))
-        decision["cascade_context"] = merged_cascade
-        decision["cascade_summary"] = {
-            k: str(v)[:200] for k, v in merged_cascade.items()
-        }
+    await _replace_or_append_history(approval_id, record.get("window_id", ""), final_output)
+    await _broadcast({"type": "approval_executed", "approval_id": approval_id, "decision": final_output})
+    return final_output
 
-    PLAN_KEYS = ("draft_plan", "reflection_notes", "revised_plan",
-                  "llm_reasoning", "proposed_tools", "observation",
-                  "observation_issues", "observation_actions")
-    orig = record.get("original_plan", {})
-    if orig:
-        for key in PLAN_KEYS:
-            if orig.get(key):
-                decision[key] = orig[key]
 
-    replaced = False
-    for i, old in enumerate(_orchestrator_history):
-        old_aid = old.get("approval_id")
-        old_wid = old.get("_window_id") or old.get("window_id", "")
-        if old_aid == approval_id or (old_wid == window_id and old.get("awaiting_approval")):
-            if not orig:
-                for key in PLAN_KEYS:
-                    if key in old and old[key]:
-                        decision[key] = old[key]
-            _orchestrator_history[i] = decision
-            replaced = True
-            break
+@app.get("/api/approvals/{approval_id}/state")
+async def approval_checkpoint_state(approval_id: str):
+    """Return the full LangGraph checkpoint state for an approval.
 
-    fp_tools = [a["tool"] for a in first_pass_actions if isinstance(a, dict)]
-    pa_tools = [a["tool"] for a in post_approval_actions if isinstance(a, dict)]
-    tier = decision.get("risk_tier", record.get("risk_tier", ""))
-    decision["decision_summary"] = (
-        f"{tier} risk: {len(fp_tools)} tools executed in first pass "
-        f"({', '.join(fp_tools)}). Human approved — "
-        f"{len(pa_tools)} post-approval tool(s) executed "
-        f"({', '.join(pa_tools)})."
-    )
-    decision["confidence"] = max(
-        orig.get("confidence", 0) if orig else decision.get("confidence", 0),
-        0.85
-    )
-
-    if not replaced:
-        _orchestrator_history.append(decision)
-
-    await _broadcast({"type": "approval_executed", "approval_id": approval_id, "decision": decision})
-    return decision
+    Phase 1B: the dashboard calls this to show tool results, LLM reasoning,
+    cascade context, and plans — all of which live in the checkpoint rather
+    than _PENDING_APPROVALS.
+    """
+    state = await get_orchestrator_state(approval_id)
+    if not state:
+        raise HTTPException(404, f"No checkpoint found for approval {approval_id}")
+    # Strip large binary / non-serialisable values before returning.
+    return {k: v for k, v in state.items() if k != "risk_input" or True}
 
 
 @app.post("/api/orchestrator/run-selective/{window_id}")
@@ -618,42 +692,94 @@ async def orchestrate_selective(window_id: str, body: Dict[str, Any]):
     decision = run_orchestrator_selective(risk_data, selected_tools)
     decision["_window_id"] = window_id
     decision["_execution_mode"] = "human_selective"
-    _orchestrator_history.append(decision)
-    if len(_orchestrator_history) > _MAX_HISTORY:
-        _orchestrator_history[:] = _orchestrator_history[-_MAX_HISTORY:]
+    await _append_history(decision)
     await _broadcast({"type": "orchestrator_decision", "decision": decision})
     return decision
 
 
-# ── Orchestrator ─────────────────────────────────────────────────────
+# Orchestrator
 
 _MAX_HISTORY = 500
 _orchestrator_history: List[Dict[str, Any]] = []
 
 
-@app.post("/api/orchestrator/run/{window_id}")
-async def orchestrate_window(window_id: str):
-    """Feed a window's risk output through the full orchestration agent."""
-    risk_data = score_window(window_id)
-    decision = run_orchestrator(risk_data)
-    decision["_window_id"] = window_id
-    _orchestrator_history.append(decision)
+def _decision_to_run_record(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    # Map an orchestration decision dict to an orchestrator_runs row.
+    thread_id = entry.get("thread_id") or entry.get("approval_id") or entry.get("_approval_id")
+    if not thread_id:
+        # Completed runs (no approval pause) don't carry a thread_id in final_output.
+        window_id = entry.get("_window_id") or entry.get("window_id") or "UNKNOWN"
+        ts = entry.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        thread_id = f"{window_id}_{ts}"
+    # Sanitize numpy/datetime types that supabase-py's json encoder can't handle.
+    safe_decision = json.loads(json.dumps(entry, default=str))
+    return {
+        "thread_id": thread_id,
+        "window_id": entry.get("_window_id") or entry.get("window_id"),
+        "shipment_id": entry.get("shipment_id"),
+        "container_id": entry.get("container_id"),
+        "risk_tier": entry.get("risk_tier"),
+        "awaiting_approval": bool(entry.get("awaiting_approval")),
+        "execution_mode": entry.get("_execution_mode") or entry.get("review_status"),
+        "decision": safe_decision,
+    }
+
+
+def _persist_history_entry(entry: Dict[str, Any]) -> None:
+    record = _decision_to_run_record(entry)
+    if record is None:
+        return
+    try:
+        from src.supabase_client import write_orchestrator_run
+        write_orchestrator_run(record)
+    except Exception as exc:
+        logger.warning("orchestrator_runs persist failed: %s", exc)
+
+
+async def _append_history(entry: Dict[str, Any]) -> None:
+    # Append a decision to in-memory history and persist it to Supabase.
+    _orchestrator_history.append(entry)
     if len(_orchestrator_history) > _MAX_HISTORY:
         _orchestrator_history[:] = _orchestrator_history[-_MAX_HISTORY:]
+    await asyncio.to_thread(_persist_history_entry, entry)
+
+
+async def _replace_or_append_history(approval_id: str, window_id: str, entry: Dict[str, Any]) -> None:
+    # Replace an existing history entry matching approval_id or window_id, else append.
+    for i, old in enumerate(_orchestrator_history):
+        if old.get("approval_id") == approval_id or old.get("_approval_id") == approval_id:
+            _orchestrator_history[i] = entry
+            await asyncio.to_thread(_persist_history_entry, entry)
+            return
+        old_wid = old.get("_window_id") or old.get("window_id", "")
+        if old_wid == window_id and old.get("awaiting_approval"):
+            _orchestrator_history[i] = entry
+            await asyncio.to_thread(_persist_history_entry, entry)
+            return
+    await _append_history(entry)
+
+
+@app.post("/api/orchestrator/run/{window_id}")
+async def orchestrate_window(window_id: str):
+    # Feed a window's risk output through the full orchestration agent.
+    risk_data = score_window(window_id)
+    decision = await run_orchestrator_async(risk_data)
+    decision["_window_id"] = window_id
+    await _append_history(decision)
     await _broadcast({"type": "orchestrator_decision", "decision": decision})
     return decision
 
 
 @app.post("/api/orchestrator/run-batch")
 async def orchestrate_batch(window_ids: List[str]):
-    """Orchestrate multiple windows (e.g. all CRITICAL windows)."""
+    # Orchestrate multiple windows (e.g. all CRITICAL windows).
     results = []
     for wid in window_ids[:20]:
         try:
             risk_data = score_window(wid)
             decision = run_orchestrator(risk_data)
             decision["_window_id"] = wid
-            _orchestrator_history.append(decision)
+            await _append_history(decision)
             results.append(decision)
         except Exception as exc:
             results.append({"_window_id": wid, "error": str(exc)})
@@ -668,27 +794,32 @@ def orchestrator_history(limit: int = Query(50, le=200)):
 
 @app.delete("/api/orchestrator/history")
 def clear_orchestrator_history():
-    """Clear all orchestration history from memory."""
+    # Clear all orchestration history from memory and Supabase.
     count = len(_orchestrator_history)
     _orchestrator_history.clear()
+    try:
+        from src.supabase_client import delete_all_orchestrator_runs
+        delete_all_orchestrator_runs()
+    except Exception as exc:
+        logger.warning("orchestrator_runs delete failed: %s", exc)
     return {"cleared": count}
 
 
 @app.get("/api/graph/mermaid")
 def graph_mermaid():
-    """Return the Mermaid diagram of the orchestration graph."""
+    # Return the Mermaid diagram of the orchestration graph.
     return {"mermaid": get_graph_mermaid()}
 
 
 @app.get("/api/orchestrator/mode")
 def orchestrator_mode():
-    """Return the orchestrator's active LLM provider, model, and mode."""
+    # Return the orchestrator's active LLM provider, model, and mode.
     return get_mode()
 
 
 @app.get("/api/llm/status")
 def llm_status():
-    """Full LLM provider status: active provider, available providers, and config."""
+    # Full LLM provider status: active provider, available providers, and config.
     import orchestrator.llm_provider as prov
     available = []
     for name in ["groq", "ollama", "openai", "anthropic"]:
@@ -716,11 +847,8 @@ def llm_status():
 
 @app.post("/api/llm/configure")
 async def configure_llm(config: Dict[str, Any]):
-    """
-    Hot-configure LLM provider settings without restart.
-    Accepts: openai_api_key, anthropic_api_key, priority, ollama_model, openai_model, anthropic_model
-    """
-    import orchestrator.llm_provider as prov
+    # Hot-configure LLM provider settings without restart.
+
 
     changed = []
     if "groq_api_key" in config:
@@ -760,7 +888,7 @@ async def configure_llm(config: Dict[str, Any]):
 
 @app.get("/api/graph/topology")
 def graph_topology():
-    """Return a JSON description of the full system graph topology."""
+    # Return a JSON description of the full system graph topology.
     return {
         "layers": [
             {
@@ -847,10 +975,7 @@ def graph_topology():
 
 @app.get("/api/triage/critical-shipments")
 async def triage_critical_shipments(limit: int = Query(20, le=100)):
-    """
-    Auto-triage: pull all CRITICAL+HIGH windows, find worst per shipment,
-    rank with enrichment, return priority list.
-    """
+    # Auto-triage: pull all CRITICAL+HIGH windows, find worst per shipment, rank with enrichment, return priority list.
     df = _get_df()
     critical = df[df["risk_tier"].isin(["CRITICAL", "HIGH"])]
     if critical.empty:
@@ -875,7 +1000,7 @@ async def triage_critical_shipments(limit: int = Query(20, le=100)):
 
 @app.post("/api/triage/rank")
 async def triage_rank(payload: Dict[str, Any]):
-    """Rank a caller-supplied list of shipment dicts."""
+    # Rank a caller-supplied list of shipment dicts.
     shipments = payload.get("shipments", [])
     enrich = payload.get("enrich", True)
     result = triage_execute(shipments=shipments, enrich=enrich)
@@ -887,11 +1012,7 @@ async def triage_rank(payload: Dict[str, Any]):
 
 @app.post("/api/ingest")
 async def ingest_window(payload: Dict[str, Any]):
-    """
-    Receive a single window_features row (from Supabase stream_listener
-    or direct POST) and score it through the risk engine in real time.
-    Returns the risk assessment and optionally triggers orchestration.
-    """
+    # Receive a single window_features row (from Supabase stream_listener or direct POST) and score it through the risk engine in real time.
     from src.feature_engineering import engineer_features
     from src.deterministic_engine import score_row
     from src.risk_fusion import fuse_scores
@@ -927,11 +1048,20 @@ async def ingest_window(payload: Dict[str, Any]):
     return result
 
 
-# ── Analytics (chart-ready aggregations) ──────────────────────────────
+# Analytics (chart-ready aggregations)
+
+@app.get("/api/agent-quality/overview")
+def agent_quality_overview(hours: int = Query(24, ge=1, le=168)):
+    # Aggregate guardrail/cost/latency metrics for the Agent Quality dashboard.
+    from src.supabase_client import fetch_agent_run_metrics_overview, fetch_recent_eval_runs
+    metrics = fetch_agent_run_metrics_overview(hours=hours)
+    eval_runs = fetch_recent_eval_runs(limit=10)
+    return {**metrics, "recent_eval_runs": eval_runs, "hours": hours}
+
 
 @app.get("/api/analytics")
 def analytics():
-    """Pre-computed distributions for dashboard charts."""
+    # Pre-computed distributions for dashboard charts.
     import numpy as np
 
     df = _get_df()
@@ -1006,7 +1136,7 @@ def analytics():
     }
 
 
-# ── Helpers ──────────────────────────────────────────────────────────
+# Helpers
 
 def _build_shipment_summaries(
     df: pd.DataFrame, top_n: Optional[int] = 10,
@@ -1055,7 +1185,11 @@ def _row_to_window(row) -> WindowRisk:
 
 def _load_audit_records() -> List[dict]:
     records = []
-    all_paths = sorted(AUDIT_DIR.glob("audit_*.jsonl")) + sorted(AUDIT_DIR.glob("compliance_events.jsonl"))
+    all_paths = (
+        sorted(AUDIT_DIR.glob("audit_*.jsonl"))
+        + sorted(AUDIT_DIR.glob("compliance_events.jsonl"))
+        + sorted(AUDIT_DIR.glob("guardrail_findings.jsonl"))
+    )
     for path in all_paths:
         try:
             with open(path) as f:
