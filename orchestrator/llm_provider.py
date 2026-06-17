@@ -95,7 +95,7 @@ def get_llm(force_refresh: bool = False):
     if _cached_llm is not None and not force_refresh:
         return _cached_llm
 
-    priority = os.environ.get("CARGO_LLM_PRIORITY", "groq,ollama,openai,anthropic").split(",")
+    priority = os.environ.get("CARGO_LLM_PRIORITY", "groq").split(",")
 
     for name in priority:
         name = name.strip().lower()
