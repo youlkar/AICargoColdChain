@@ -50,10 +50,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# LangSmith tracing enabled automatically 
+# LangSmith tracing — explicitly initialize so traces are flushed to the API
 if os.environ.get("LANGCHAIN_TRACING_V2") == "true":
-    logger.info("LangSmith tracing enabled (project: %s)",
-                os.environ.get("LANGCHAIN_PROJECT", "default"))
+    try:
+        from langsmith import Client as LangSmithClient
+        _ls_client = LangSmithClient(
+            api_url=os.environ.get("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com"),
+            api_key=os.environ.get("LANGCHAIN_API_KEY"),
+        )
+        logger.info("LangSmith tracing enabled (project: %s)",
+                    os.environ.get("LANGCHAIN_PROJECT", "default"))
+    except Exception as _ls_err:
+        logger.warning("LangSmith client init failed (tracing disabled): %s", _ls_err)
 
 BASE = Path(__file__).resolve().parent.parent
 SCORED_CSV = BASE / "artifacts" / "scored_windows.csv"
