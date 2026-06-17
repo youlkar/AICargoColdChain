@@ -1,49 +1,49 @@
 """
-Generate embeddings for compliance documents using Sentence Transformers.
-
-Used by the vector store for semantic search over regulatory documents.
+Embeddings via Gemini API — free tier, no local model loaded into RAM.
+Used by the compliance vector store for semantic search over regulatory documents.
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import List
 
+import google.generativeai as genai
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
+
+EMBEDDING_DIM = 768  # text-embedding-004 output dimension
 
 
 class EmbeddingGenerator:
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
-        logger.info("Loading embedding model: %s …", model_name)
-        self.model = SentenceTransformer(model_name)
-        # API changed in newer sentence_transformers: get_sentence_embedding_dimension()
-        # replaced get_embedding_dimension() which only exists in older versions
-        if hasattr(self.model, "get_sentence_embedding_dimension"):
-            self.embedding_dim = self.model.get_sentence_embedding_dimension()
-        elif hasattr(self.model, "get_embedding_dimension"):
-            self.embedding_dim = self.model.get_embedding_dimension()
-        else:
-            self.embedding_dim = self.model.encode("test").shape[0]
-        logger.info("Embedding model ready (dim=%d)", self.embedding_dim)
+    def __init__(self, model_name: str = "models/text-embedding-004"):
+        self.model_name = model_name
+        self.embedding_dim = EMBEDDING_DIM
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY environment variable is not set")
+        genai.configure(api_key=api_key)
+        logger.info("EmbeddingGenerator ready (model=%s, dim=%d)", model_name, EMBEDDING_DIM)
 
     def generate_embedding(self, text: str) -> List[float]:
-        embedding = self.model.encode(text, convert_to_numpy=True)
-        return embedding.tolist()
+        result = genai.embed_content(model=self.model_name, content=text)
+        return result["embedding"]
 
     def generate_embeddings_batch(
         self, texts: List[str], batch_size: int = 32
     ) -> List[List[float]]:
         logger.info("Generating embeddings for %d texts …", len(texts))
-        embeddings = self.model.encode(
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-        )
-        return embeddings.tolist()
+        results: List[List[float]] = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            result = genai.embed_content(model=self.model_name, content=batch)
+            embeddings = result["embedding"]
+            if embeddings and isinstance(embeddings[0], float):
+                embeddings = [embeddings]
+            results.extend(embeddings)
+        return results
 
     def similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         vec1 = np.array(embedding1)
