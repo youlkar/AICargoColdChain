@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import joblib
 import numpy as np
 import pandas as pd
-import shap
 from sklearn.metrics import (
     average_precision_score,
     classification_report,
@@ -127,6 +126,7 @@ def explain(
     top_k: int = 5,
 ) -> List[List[Dict[str, Any]]]:
     # Compute SHAP values and return the top-k contributing features per row.
+    import shap
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X)
 
