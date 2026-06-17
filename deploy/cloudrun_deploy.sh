@@ -15,9 +15,9 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
-# Write a clean env-vars file for gcloud (strips comments and blank lines)
+# Write a YAML env-vars file for gcloud (strips comments and blank lines, converts KEY=VALUE to KEY: VALUE)
 ENV_FILE=$(mktemp)
-grep -v '^\s*#' .env | grep -v '^\s*$' > "${ENV_FILE}"
+grep -v '^\s*#' .env | grep -v '^\s*$' | sed "s/'/\\'/g" | awk -F'=' '{key=$1; $1=""; val=substr($0,2); gsub(/^[[:space:]]+|[[:space:]]+$/, "", val); printf "%s: \x27%s\x27\n", key, val}' > "${ENV_FILE}"
 
 echo "==> Building image with Cloud Build ..."
 gcloud builds submit \
