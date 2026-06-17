@@ -11,7 +11,7 @@ IMAGE="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 
 echo "==> Loading env vars from .env ..."
 if [ ! -f ".env" ]; then
-  echo "ERROR: .env file not found. Copy .env.example to .env and fill in values."
+  echo "ERROR: .env file not found. Copy .env.example to .env and fill in values"
   exit 1
 fi
 
