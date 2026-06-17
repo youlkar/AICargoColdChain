@@ -1,0 +1,11 @@
+# Install these locally only for training/experimentation — not on Cloud Run
+-r requirements.txt
+torch>=2.9.0
+sentence-transformers>=3.0.0
+optuna>=4.1
+matplotlib>=3.9
+seaborn>=0.13
+shap>=0.46
+langchain-ollama>=1.1
+langchain-openai>=0.3
+langchain-anthropic>=0.3
