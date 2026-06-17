@@ -15,8 +15,9 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
-# Build comma-separated KEY=VALUE string from .env
-ENV_VARS=$(grep -v '^\s*#' .env | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+# Write a clean env-vars file for gcloud (strips comments and blank lines)
+ENV_FILE=$(mktemp)
+grep -v '^\s*#' .env | grep -v '^\s*$' > "${ENV_FILE}"
 
 echo "==> Building image with Cloud Build ..."
 gcloud builds submit \
@@ -33,8 +34,10 @@ gcloud run deploy "${SERVICE_NAME}" \
   --cpu 1 \
   --min-instances 0 \
   --max-instances 2 \
-  --set-env-vars "${ENV_VARS}" \
+  --env-vars-file "${ENV_FILE}" \
   --project "${PROJECT_ID}"
+
+rm -f "${ENV_FILE}"
 
 echo ""
 echo "==> Deploy complete. Service URL:"
