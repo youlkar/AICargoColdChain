@@ -18,7 +18,7 @@ EMBEDDING_DIM = 768  # text-embedding-004 output dimension
 
 class EmbeddingGenerator:
 
-    def __init__(self, model_name: str = "models/text-embedding-004"):
+    def __init__(self, model_name: str = "text-embedding-004"):
         self.model_name = model_name
         self.embedding_dim = EMBEDDING_DIM
         api_key = os.environ.get("GEMINI_API_KEY", "")
