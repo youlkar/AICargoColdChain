@@ -27,7 +27,7 @@ class ComplianceVectorStore:
                 test_result = self.client.table(self.table_name).select("count", count="exact").limit(1).execute()
                 
                 # initialize embedding generator
-                self.embedder = EmbeddingGenerator(model_name="all-MiniLM-L6-v2")
+                self.embedder = EmbeddingGenerator()
                 self.use_mock = False
                 
                 print(f"Connected to Supabase for vector store operations")

@@ -36,7 +36,7 @@ class ComplianceVectorStore:
 
                 from tools.helper.embeddings import EmbeddingGenerator
 
-                self.embedder = EmbeddingGenerator(model_name="all-MiniLM-L6-v2")
+                self.embedder = EmbeddingGenerator()
                 self.use_mock = False
                 logger.info(
                     "Vector store connected (dim=%d)", self.embedder.embedding_dim
