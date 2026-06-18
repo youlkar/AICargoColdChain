@@ -17,13 +17,25 @@ _cached_llm = None
 
 
 def _get_tracer_callbacks() -> list:
-    if os.environ.get("LANGCHAIN_TRACING_V2", "").lower() != "true":
+    tracing = (
+        os.environ.get("LANGSMITH_TRACING", "")
+        or os.environ.get("LANGCHAIN_TRACING_V2", "")
+    ).lower()
+    if tracing != "true":
+        return []
+    api_key = (
+        os.environ.get("LANGSMITH_API_KEY")
+        or os.environ.get("LANGCHAIN_API_KEY")
+    )
+    project = (
+        os.environ.get("LANGSMITH_PROJECT")
+        or os.environ.get("LANGCHAIN_PROJECT", "default")
+    )
+    if not api_key:
         return []
     try:
         from langchain_core.tracers import LangChainTracer
-        tracer = LangChainTracer(
-            project_name=os.environ.get("LANGCHAIN_PROJECT", "default")
-        )
+        tracer = LangChainTracer(project_name=project)
         return [tracer]
     except Exception as e:
         logger.debug("LangSmith tracer init failed: %s", e)
