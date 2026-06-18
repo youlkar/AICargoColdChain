@@ -1,0 +1,13 @@
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.DS_Store
+dashboard/node_modules/
+dashboard/dist/
+notebooks/
+audit_logs/
+notification_logs/

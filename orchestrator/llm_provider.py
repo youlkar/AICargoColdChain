@@ -16,6 +16,20 @@ _cached_provider: Optional[str] = None
 _cached_llm = None
 
 
+def _get_tracer_callbacks() -> list:
+    if os.environ.get("LANGCHAIN_TRACING_V2", "").lower() != "true":
+        return []
+    try:
+        from langchain_core.tracers import LangChainTracer
+        tracer = LangChainTracer(
+            project_name=os.environ.get("LANGCHAIN_PROJECT", "default")
+        )
+        return [tracer]
+    except Exception as e:
+        logger.debug("LangSmith tracer init failed: %s", e)
+        return []
+
+
 def _try_groq():
     key = os.environ.get("GROQ_API_KEY", "")
     if not key or key == "your-key-here":
@@ -23,7 +37,13 @@ def _try_groq():
     model = os.environ.get("CARGO_GROQ_MODEL", "llama-3.3-70b-versatile")
     try:
         from langchain_groq import ChatGroq
-        llm = ChatGroq(model=model, temperature=0.1, max_tokens=1024, api_key=key)
+        llm = ChatGroq(
+            model=model,
+            temperature=0.1,
+            max_tokens=1024,
+            api_key=key,
+            callbacks=_get_tracer_callbacks(),
+        )
         logger.info("LLM provider: Groq (%s)", model)
         return llm
     except Exception as e:
