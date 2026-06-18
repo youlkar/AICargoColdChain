@@ -31,14 +31,22 @@ def _get_tracer_callbacks() -> list:
         os.environ.get("LANGSMITH_PROJECT")
         or os.environ.get("LANGCHAIN_PROJECT", "default")
     )
+    endpoint = (
+        os.environ.get("LANGSMITH_ENDPOINT")
+        or os.environ.get("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    )
     if not api_key:
+        logger.warning("LangSmith tracing enabled but no API key found")
         return []
     try:
+        from langsmith import Client as LangSmithClient
         from langchain_core.tracers import LangChainTracer
-        tracer = LangChainTracer(project_name=project)
+        client = LangSmithClient(api_url=endpoint, api_key=api_key)
+        tracer = LangChainTracer(project_name=project, client=client)
+        logger.info("LangSmith tracer active (project=%s)", project)
         return [tracer]
     except Exception as e:
-        logger.debug("LangSmith tracer init failed: %s", e)
+        logger.warning("LangSmith tracer init failed: %s", e)
         return []
 
 
