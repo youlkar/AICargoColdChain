@@ -14,7 +14,7 @@ from langgraph.graph import END, StateGraph
 from tools.approval_workflow import _PENDING_APPROVALS
 
 from orchestrator import guardrails
-from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name
+from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name, _get_tracer_callbacks
 from langgraph.types import Send
 
 from orchestrator.nodes import (
@@ -377,13 +377,17 @@ def get_compiled():
 
 async def run_orchestrator_async(risk_input: Dict[str, Any]) -> Dict[str, Any]:
     # async entry point with checkpoint-based HITL.
-    
+
     thread_id = (
         f"{risk_input.get('shipment_id', 'SHP')}"
         f"_{risk_input.get('window_id', 'WIN')}"
         f"_{int(time.time() * 1000)}"
     )
-    config: Dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    callbacks = _get_tracer_callbacks()
+    config: Dict[str, Any] = {
+        "configurable": {"thread_id": thread_id},
+        **({"callbacks": callbacks} if callbacks else {}),
+    }
     app = get_compiled()
 
     initial: OrchestratorState = {
