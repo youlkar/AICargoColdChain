@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { useApi } from '../hooks/useApi';
-import { Link } from 'react-router-dom';
-import {
-  PieChart, Pie, Cell, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-} from 'recharts';
-import { AlertTriangle, Thermometer, Activity, ShieldCheck, ArrowUpRight, CheckCircle2, Search, Bot } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { AlertTriangle, Thermometer, Activity, ClipboardCheck, ArrowUpRight, CheckCircle2, Search, Bot, ShieldCheck, ChevronRight, DollarSign, Boxes } from 'lucide-react';
 import TierBadge from './TierBadge';
 import { TIER_COLORS, TIER_ORDER } from '../lib/colors';
 import StatCard from './shared/StatCard';
@@ -13,7 +10,7 @@ import ColdChainPulse from './shared/ColdChainPulse';
 import { StatCardSkeleton, ChartSkeleton, ErrorState, EmptyState } from './shared/States';
 import AgentChip from './shared/AgentChip';
 import { getAgentHeadline } from '../lib/agentSummaries';
-import { timeAgo } from '../lib/format';
+import { timeAgo, formatUsdCompact } from '../lib/format';
 import { safeStr } from '../lib/toolResults';
 
 function CustomTooltip({ active, payload }) {
@@ -30,13 +27,17 @@ function CustomTooltip({ active, payload }) {
 }
 
 export default function Overview() {
-  const { data, loading, error, refetch } = useApi('/risk/overview');
+  const navigate = useNavigate();
+  const [rangeHours, setRangeHours] = useState(24);
+  const { data, loading, error, refetch } = useApi(
+    `/risk/overview${rangeHours ? `?hours=${rangeHours}` : ''}`, [rangeHours]
+  );
   const { data: history } = useApi('/orchestrator/history?limit=200');
   const { data: pendingApprovals } = useApi('/approvals/pending');
-  const topShipmentId = data?.top_risky_shipments?.[0]?.shipment_id;
+  const topShipment = data?.top_risky_shipments?.[0];
+  const topShipmentId = topShipment?.shipment_id;
   const { data: pulseWindows } = useApi(`/shipments/${topShipmentId || 'none'}/windows`);
 
-  const [rangeHours, setRangeHours] = useState(24);
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('ALL');
   const [productFilter, setProductFilter] = useState('ALL');
@@ -68,11 +69,6 @@ export default function Overview() {
 
   const pieData = TIER_ORDER.filter(t => data.tier_counts[t]).map(t => ({ name: t, value: data.tier_counts[t] }));
   const totalWindows = pieData.reduce((s, d) => s + d.value, 0);
-  const barData = (data.top_risky_shipments || []).slice(0, 8).map(s => ({
-    shipment: s.shipment_id,
-    score: s.max_fused_score,
-    tier: s.latest_risk_tier,
-  }));
 
   const cutoff = rangeHours > 0 ? Date.now() - rangeHours * 3600 * 1000 : 0;
   const recentActions = (history || [])
@@ -94,11 +90,11 @@ export default function Overview() {
   const lastUpdated = (history && history[0]?.timestamp) ? timeAgo(history[0].timestamp) : 'just now';
   const statValues = {
     shipments: data.total_shipments,
+    escalated: data.escalated_shipments || 0,
+    monitored: data.monitored_shipments || 0,
     critical: data.tier_counts.CRITICAL || 0,
-    avgScore: (data.top_risky_shipments || []).length > 0
-      ? ((data.top_risky_shipments.reduce((s, x) => s + x.max_fused_score, 0)) / data.top_risky_shipments.length).toFixed(2)
-      : '—',
-    agentsOnline: '5/5',
+    valueAtRisk: formatUsdCompact(data.total_value_at_risk_usd),
+    pendingApprovals: (pendingApprovals || []).length,
   };
 
   return (
@@ -110,12 +106,17 @@ export default function Overview() {
             {data.total_shipments} active shipments &middot; last updated {lastUpdated}
           </p>
         </div>
-        <select value={rangeHours} onChange={e => setRangeHours(Number(e.target.value))}
-          className="panel-sm px-3 py-2 text-xs font-heading text-[var(--text-primary)] bg-transparent outline-none cursor-pointer">
-          <option value={24}>Last 24h</option>
-          <option value={168}>Last 7d</option>
-          <option value={0}>All time</option>
-        </select>
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: 'var(--bg-page)' }}>
+          {[[24, '24h'], [168, '7d'], [0, 'All']].map(([h, label]) => (
+            <button key={h} onClick={() => setRangeHours(h)}
+              className="px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition"
+              style={rangeHours === h
+                ? { backgroundColor: 'var(--card-border)', color: 'var(--text-primary)' }
+                : { color: 'var(--text-secondary-2)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-2 panel-sm px-3 py-2">
           <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent-emerald)' }} />
           <span className="text-xs font-heading font-medium" style={{ color: 'var(--accent-emerald)' }}>GDP Compliant</span>
@@ -150,90 +151,80 @@ export default function Overview() {
       )}
 
       <div className="grid grid-cols-4 gap-4">
-        <StatCard icon={Activity} label="Active Shipments" value={statValues.shipments} accent="cyan" delay={0} />
+        <StatCard icon={Boxes} label="Fleet Status" value={statValues.shipments} accent="cyan" delay={0}
+          delta={{ text: `${statValues.escalated} escalated · ${statValues.monitored} monitored`, tone: statValues.escalated > 0 ? 'warn' : 'ok' }} />
         <StatCard icon={AlertTriangle} label="Critical Alerts" value={String(statValues.critical).padStart(3, '0')} accent="red" delay={60} />
-        <StatCard icon={Thermometer} label="Avg Risk Score" value={statValues.avgScore} accent="amber" delay={120} />
-        <StatCard icon={ShieldCheck} label="Agents Online" value={statValues.agentsOnline} accent="emerald" delay={180} />
+        <StatCard icon={DollarSign} label="Value at Risk" value={statValues.valueAtRisk} accent="amber" delay={120}
+          delta={{ text: `across ${statValues.escalated} escalated shipment${statValues.escalated === 1 ? '' : 's'}`, tone: 'neutral' }} />
+        <StatCard icon={ClipboardCheck} label="Pending Approvals" value={statValues.pendingApprovals} accent="cyan" delay={180} />
       </div>
 
-      <ColdChainPulse shipmentId={topShipmentId} windows={pulseWindows} />
-
-      <div className="grid grid-cols-2 gap-6">
-        <div className="panel p-6 animate-slide-up" style={{ animationDelay: '480ms' }}>
+      <div className="grid gap-4 animate-slide-up" style={{ gridTemplateColumns: '1fr 2.4fr 1fr', animationDelay: '480ms' }}>
+        <div className="panel p-4">
           <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)] mb-1">Tier Distribution</h2>
-          <p className="text-[11px] text-[var(--text-secondary-2)] mb-4">Risk classification breakdown across all windows</p>
-          <ResponsiveContainer width="100%" height={260}>
+          <p className="text-[11px] text-[var(--text-secondary-2)] mb-3">Escalated windows only</p>
+          <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                innerRadius={65} outerRadius={100} paddingAngle={3} strokeWidth={0}>
+                innerRadius={48} outerRadius={75} paddingAngle={3} strokeWidth={0}>
                 {pieData.map(d => (
                   <Cell key={d.name} fill={TIER_COLORS[d.name]} />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
-              <text x="50%" y="46%" textAnchor="middle" className="fill-[var(--text-primary)] text-2xl font-bold font-data">{totalWindows}</text>
-              <text x="50%" y="56%" textAnchor="middle" className="fill-[var(--text-secondary-2)] text-[11px]">total</text>
+              <text x="50%" y="46%" textAnchor="middle" className="fill-[var(--text-primary)] text-xl font-bold font-data">{totalWindows}</text>
+              <text x="50%" y="58%" textAnchor="middle" className="fill-[var(--text-secondary-2)] text-[10px]">escalated</text>
             </PieChart>
           </ResponsiveContainer>
-          <div className="flex justify-center gap-5 mt-3">
+          <div className="flex justify-center flex-wrap gap-3 mt-2">
             {pieData.map(d => (
-              <span key={d.name} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary-2)] font-heading">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: TIER_COLORS[d.name] }} />
+              <span key={d.name} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary-2)] font-heading">
+                <span className="w-2 h-2 rounded-full" style={{ background: TIER_COLORS[d.name] }} />
                 {d.name} <span className="font-data">{d.value}</span>
               </span>
             ))}
           </div>
         </div>
 
-        <div className="panel p-6 animate-slide-up" style={{ animationDelay: '560ms' }}>
-          <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)] mb-1">Top Risky Shipments</h2>
-          <p className="text-[11px] text-[var(--text-secondary-2)] mb-4">Highest fused risk scores across active shipments</p>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={barData} layout="vertical" margin={{ left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-              <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--text-secondary-2)' }} stroke="transparent" />
-              <YAxis type="category" dataKey="shipment" tick={{ fontSize: 10, fill: 'var(--text-secondary-2)' }} width={60} stroke="transparent" />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="score" radius={[0, 6, 6, 0]}>
-                {barData.map((d, i) => (
-                  <Cell key={i} fill={TIER_COLORS[d.tier] || '#64748b'} fillOpacity={0.85} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+        <ColdChainPulse
+          shipmentId={topShipmentId}
+          windows={pulseWindows}
+          riskTier={topShipment?.latest_risk_tier}
+          score={topShipment?.max_fused_score}
+          valueAtRisk={topShipment?.value_at_risk_usd}
+        />
 
-      <div className="panel p-6 animate-slide-up" style={{ animationDelay: '640ms' }}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
-          <Link to="/agent" className="text-xs font-heading text-[var(--accent-cyan)] hover:underline">View all &rarr;</Link>
-        </div>
-        {recentActions.length === 0 ? (
-          <EmptyState icon={Bot} title="No agent activity yet"
-            description="Run the orchestrator from the Agent Activity page to see actions here." />
-        ) : (
-          <div className="space-y-1.5">
-            {recentActions.map((item, i) => {
-              const headline = getAgentHeadline(item.action.tool, item.action);
-              return (
-                <div key={i} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/[0.02] transition">
-                  <AgentChip toolId={item.action.tool} size="sm" />
-                  <span className="text-xs text-[var(--text-secondary-2)] truncate flex-1">{headline.title}</span>
-                  <Link to={`/shipments/${item.shipmentId}`} className="text-[10px] font-data text-[var(--text-secondary-2)] hover:text-[var(--accent-cyan)] shrink-0">
-                    {item.windowId}
-                  </Link>
-                  <span className="text-[10px] font-data text-[var(--text-secondary-2)] shrink-0 w-14 text-right">{timeAgo(item.timestamp)}</span>
-                </div>
-              );
-            })}
+        <div className="panel p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
+            <Link to="/agent" className="text-xs font-heading text-[var(--accent-cyan)] hover:underline">View all &rarr;</Link>
           </div>
-        )}
+          {recentActions.length === 0 ? (
+            <EmptyState icon={Bot} title="No agent activity yet"
+              description="Run the orchestrator from the Agent Activity page to see actions here." />
+          ) : (
+            <div className="space-y-1">
+              {recentActions.slice(0, 6).map((item, i) => {
+                const headline = getAgentHeadline(item.action.tool, item.action);
+                return (
+                  <div key={i} className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-white/[0.02] transition">
+                    <AgentChip toolId={item.action.tool} size="sm" />
+                    <span className="text-xs text-[var(--text-secondary-2)] truncate flex-1">{headline.title}</span>
+                    <span className="text-[10px] font-data text-[var(--text-secondary-2)] shrink-0">{timeAgo(item.timestamp)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="panel p-6 animate-slide-up" style={{ animationDelay: '720ms' }}>
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
+          <div>
+            <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
+            <p className="text-[11px] text-[var(--text-secondary-2)] mt-0.5">Click a row for shipment details</p>
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1.5 panel-sm px-2.5 py-1.5">
               <Search className="w-3.5 h-3.5 text-[var(--text-secondary-2)]" />
@@ -261,33 +252,51 @@ export default function Overview() {
                 <th className="pb-3 pr-4 font-medium">Products</th>
                 <th className="pb-3 pr-4 font-medium">Windows</th>
                 <th className="pb-3 pr-4 font-medium">Latest Tier</th>
-                <th className="pb-3 pr-4 font-medium">Max Score</th>
-                <th className="pb-3 pr-4 font-medium">% Critical</th>
+                <th className="pb-3 pr-6 font-medium">Max Score</th>
+                <th className="pb-3 pr-4 font-medium text-right">% Critical</th>
+                <th className="pb-3 pr-4 font-medium text-right">Value at Risk</th>
               </tr>
             </thead>
             <tbody>
               {filteredShipments.length === 0 ? (
-                <tr><td colSpan={7}>
+                <tr><td colSpan={8}>
                   <EmptyState icon={Search} title="No shipments match your filters"
                     description="Try a different shipment ID, tier, or product." />
                 </td></tr>
               ) : filteredShipments.slice(0, 10).map((s, i) => (
                 <tr key={s.shipment_id}
-                    className="border-b border-[var(--card-border)] hover:bg-white/[0.02] transition animate-fade-in"
+                    onClick={() => navigate(`/shipments/${s.shipment_id}`)}
+                    className="border-b border-[var(--card-border)] hover:bg-white/[0.03] transition animate-fade-in cursor-pointer"
                     style={{ animationDelay: `${760 + i * 40}ms` }}>
                   <td className="py-3 pr-4">
-                    <Link to={`/shipments/${s.shipment_id}`} className="font-medium font-data transition" style={{ color: 'var(--accent-cyan)' }}>
+                    <span className="font-medium font-data flex items-center gap-1.5" style={{ color: 'var(--accent-cyan)' }}>
                       {s.shipment_id}
-                    </Link>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-50" />
+                    </span>
                   </td>
                   <td className="py-3 pr-4 text-[var(--text-secondary-2)]">{s.containers.join(', ')}</td>
                   <td className="py-3 pr-4 text-[var(--text-secondary-2)]">{s.products.join(', ')}</td>
                   <td className="py-3 pr-4 text-[var(--text-primary)] font-data">{s.total_windows}</td>
                   <td className="py-3 pr-4"><TierBadge tier={s.latest_risk_tier} /></td>
-                  <td className="py-3 pr-4 font-data text-[var(--text-primary)]">{s.max_fused_score.toFixed(4)}</td>
-                  <td className="py-3 pr-4">
+                  <td className="py-3 pr-6">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 max-w-[64px] h-1.5 rounded-full" style={{ backgroundColor: 'var(--card-border)' }}>
+                        <div className="h-1.5 rounded-full" style={{
+                          width: `${Math.min(s.max_fused_score * 100, 100)}%`,
+                          backgroundColor: TIER_COLORS[s.latest_risk_tier] || 'var(--text-secondary-2)',
+                        }} />
+                      </div>
+                      <span className="font-data text-[var(--text-primary)] shrink-0">{s.max_fused_score.toFixed(4)}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 text-right">
                     <span className="font-data" style={{ color: s.pct_critical > 30 ? 'var(--accent-red)' : 'var(--text-secondary-2)' }}>
                       {s.pct_critical}%
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 text-right">
+                    <span className="font-data font-semibold" style={{ color: 'var(--accent-amber)' }}>
+                      {formatUsdCompact(s.value_at_risk_usd)}
                     </span>
                   </td>
                 </tr>

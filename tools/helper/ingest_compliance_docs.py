@@ -9,11 +9,14 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Add backend to path for proper imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path so `tools.*` and `backend.*` imports resolve
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 from supabase import create_client, Client
 from tools.helper.document_parser import ComplianceDocumentParser
-from tools.helper.vector_store import ComplianceVectorStore
+# from tools.helper.document_parser import ComplianceDocumentParser
+from vector_store import ComplianceVectorStore
+# from tools.helper.vector_store import ComplianceVectorStore
 
 
 # document metadata (maps to files in Supabase Storage)
@@ -294,10 +297,10 @@ def ingest_documents():
         if results:
             print(f"\nTop {len(results)} results:")
             for i, result in enumerate(results, 1):
-                print(f"\n{i}. {result['regulation_id']} - {result['title']}")
-                print(f"   Authority: {result['authority']}")
+                print(f"\n{i}. {result.get('regulation_id', '?')} - {result.get('title', '?')}")
+                print(f"   Authority: {result.get('authority', 'N/A')}")
                 print(f"   Similarity: {result.get('similarity', 0):.3f}")
-                print(f"   Content preview: {result['content'][:150]}...")
+                print(f"   Content preview: {result.get('content', '')[:150]}...")
         else:
             print("[WARNING] No results found. Check embeddings.")
     else:

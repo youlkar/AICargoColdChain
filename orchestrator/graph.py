@@ -6,6 +6,7 @@ from orchestrator.checkpointer import get_checkpointer
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import asyncio
@@ -14,7 +15,7 @@ from langgraph.graph import END, StateGraph
 from tools.approval_workflow import _PENDING_APPROVALS
 
 from orchestrator import guardrails
-from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name, _get_tracer_callbacks
+from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name, _get_tracer_callbacks, get_langsmith_client
 from langgraph.types import Send
 
 from orchestrator.nodes import (
@@ -192,6 +193,7 @@ def _register_approval_from_checkpoint(state: dict, thread_id: str) -> None:
         # thread_id IS the approval_id.
         "approval_id": thread_id,
         "thread_id": thread_id,
+        "ls_run_id": state.get("ls_run_id"),  # for post-approval LangSmith feedback
         "shipment_id": ri.get("shipment_id", ""),
         "window_id": ri.get("window_id"),
         "container_id": ri.get("container_id"),
@@ -373,27 +375,93 @@ def get_compiled():
     return _compiled
 
 
+def _post_run_feedback(ls_run_id: str, state_values: dict) -> None:
+    """Post structured operational metrics as LangSmith feedback scores."""
+    client = get_langsmith_client()
+    if not client or not ls_run_id:
+        return
+    try:
+        token_breakdown = state_values.get("token_breakdown") or {}
+        node_latencies  = state_values.get("node_latencies") or {}
+        guardrail_findings = state_values.get("guardrail_findings") or []
+        tool_results    = state_values.get("tool_results") or []
+        replan_count    = int(state_values.get("replan_count", 0))
+        confidence      = float((state_values.get("final_output") or {}).get("confidence",
+                                 state_values.get("confidence", 0.0)))
+
+        total_tokens  = sum(v.get("tokens", 0) for v in token_breakdown.values() if isinstance(v, dict))
+        total_cost    = sum(v.get("cost_usd", 0.0) for v in token_breakdown.values() if isinstance(v, dict))
+        total_latency = sum(v for v in node_latencies.values() if isinstance(v, (int, float)))
+        failed_guardrails = len([f for f in guardrail_findings
+                                 if isinstance(f, dict) and not f.get("passed", True)])
+        llm_used = 1.0 if state_values.get("llm_reasoning") else 0.0
+
+        scores = {
+            "total_tokens":       float(total_tokens),
+            "total_cost_usd":     round(total_cost, 6),
+            "total_latency_ms":   round(total_latency, 1),
+            "replan_count":       float(replan_count),
+            "confidence":         round(confidence, 3),
+            "tool_count":         float(len(tool_results)),
+            "correction_fired":   1.0 if replan_count > 0 else 0.0,
+            "guardrail_failures": float(failed_guardrails),
+            "llm_used":           llm_used,
+        }
+
+        src = {"source": "orchestrator_post_run"}
+        for key, score in scores.items():
+            try:
+                client.create_feedback(run_id=ls_run_id, key=key, score=score, source_info=src)
+            except Exception:
+                pass
+        logger.debug("LangSmith feedback posted (run=%s keys=%d)", ls_run_id[:8], len(scores))
+    except Exception as exc:
+        logger.debug("_post_run_feedback failed (non-fatal): %s", exc)
+
+
 # async orchestrator (primary path, used by FastAPI endpoints)
 
 async def run_orchestrator_async(risk_input: Dict[str, Any]) -> Dict[str, Any]:
     # async entry point with checkpoint-based HITL.
 
-    thread_id = (
-        f"{risk_input.get('shipment_id', 'SHP')}"
-        f"_{risk_input.get('window_id', 'WIN')}"
-        f"_{int(time.time() * 1000)}"
-    )
+    risk_tier  = str(risk_input.get("risk_tier", "UNKNOWN")).upper()
+    window_id  = str(risk_input.get("window_id", "WIN"))
+    shipment_id = str(risk_input.get("shipment_id", "SHP"))
+
+    thread_id  = f"{shipment_id}_{window_id}_{int(time.time() * 1000)}"
+    ls_run_id  = uuid.uuid4()
+
     callbacks = _get_tracer_callbacks()
     config: Dict[str, Any] = {
         "configurable": {"thread_id": thread_id},
+        # LangSmith structured run metadata — enables filtering, slicing, and
+        # feedback correlation in the dashboard.
+        "run_id":   ls_run_id,
+        "run_name": f"{risk_tier}|{window_id}",
+        "tags": [
+            f"tier:{risk_tier}",
+            f"provider:{get_provider_name()}",
+            f"model:{get_model_name()}",
+            "env:production",
+        ],
+        "metadata": {
+            "shipment_id": shipment_id,
+            "window_id":   window_id,
+            "risk_tier":   risk_tier,
+            "provider":    get_provider_name(),
+            "model":       get_model_name(),
+            "thread_id":   thread_id,
+            "ls_run_id":   str(ls_run_id),
+        },
         **({"callbacks": callbacks} if callbacks else {}),
     }
     app = get_compiled()
 
     initial: OrchestratorState = {
-        "risk_input": risk_input,
-        "replan_count": 0,
-        "thread_id": thread_id,
+        "risk_input":    risk_input,
+        "replan_count":  0,
+        "thread_id":     thread_id,
+        "ls_run_id":     str(ls_run_id),
         "run_started_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -401,6 +469,9 @@ async def run_orchestrator_async(risk_input: Dict[str, Any]) -> Dict[str, Any]:
 
     # Read back the checkpoint to determine whether we paused or finished.
     state = await app.aget_state(config)
+
+    # Post operational metrics to LangSmith regardless of pause/complete.
+    _post_run_feedback(str(ls_run_id), state.values)
 
     if state.next and "human_review" in state.next:
         # Graph is paused —> register the approval and return a summary.

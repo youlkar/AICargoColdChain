@@ -169,17 +169,26 @@ def _score_facility(
         capacity_score = min(capacity_score * 1.5, 1.0)
 
     # Sub-score: proximity
-    airport_code       = facility_record.get("airport_code", "").upper()
-    city               = facility_record.get("city", "").upper()
-    location_str       = facility_record.get("location", "").upper()
-    hint               = (location_hint or "").upper().strip()
+    #
+    # location_hint is populated upstream (orchestrator/nodes.py) either as a
+    # 3-letter IATA airport code from the shipment's currently-assigned
+    # facility, or — when no facility is assigned yet — as a non-geographic
+    # transit_phase string (e.g. "air_handoff", "customs_clearance"). The
+    # latter carries no location signal at all, so it must not be scored as a
+    # proximity mismatch (0.0); doing so previously dragged confidence below
+    # the guardrail threshold on most runs that simply hadn't picked a
+    # facility yet. We treat any hint that isn't a 3-letter airport code as
+    # "no signal" and score it neutrally.
+    airport_code = facility_record.get("airport_code", "").upper()
+    hint         = (location_hint or "").upper().strip()
+    is_airport_code_hint = bool(re.fullmatch(r"[A-Z]{3}", hint))
 
-    if hint and airport_code == hint:
+    if not hint or not is_airport_code_hint:
+        proximity_score = 0.5  # no usable location signal — neutral, not a penalty
+    elif airport_code == hint:
         proximity_score = 1.0
-    elif hint and (hint in city or city in hint or hint in location_str):
-        proximity_score = 0.5
     else:
-        proximity_score = 0.0
+        proximity_score = 0.0  # a different, known airport — genuine mismatch
 
     # Sub-score: advance notice window
     min_notice = float(facility_record.get("min_advance_notice_hours", 0))

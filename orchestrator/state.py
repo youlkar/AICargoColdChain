@@ -118,3 +118,7 @@ class OrchestratorState(TypedDict, total=False):
     node_latencies: Annotated[Dict[str, Any], _merge_dicts]
     token_breakdown: Annotated[Dict[str, Any], _merge_dicts]
     run_started_at: str
+
+    # LangSmith observability — run_id ties this state to the LangSmith trace
+    # so human-approval feedback and eval scores can be posted to the same run.
+    ls_run_id: Optional[str]

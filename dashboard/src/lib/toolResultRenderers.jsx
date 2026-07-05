@@ -1,7 +1,7 @@
 // Per-tool structured result renderers, shared between AgentActivity's
 // technical view and the AgentActivityOverview "show details" expanders.
 import { Brain, AlertTriangle, BookOpen } from 'lucide-react';
-import { KV, safeStr, NotificationResult, MethodBadge } from './toolResults';
+import { KV, safeStr, humanize, NotificationResult, MethodBadge } from './toolResults';
 
 export function ComplianceResult({ r }) {
   if (!r) return null;
@@ -27,14 +27,14 @@ export function ComplianceResult({ r }) {
       {violations.length > 0 && (
         <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-3">
           <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider flex items-center gap-1 mb-1"><AlertTriangle className="w-3 h-3" /> Violations ({violations.length})</p>
-          {violations.slice(0, 5).map((v, i) => <p key={i} className="text-[11px] text-red-300/80 pl-4 truncate">• {v}</p>)}
+          {violations.slice(0, 5).map((v, i) => <p key={i} className="text-[11px] text-red-300/80 pl-4 break-words">• {v}</p>)}
           {violations.length > 5 && <p className="text-[10px] text-red-400/50 pl-4">+{violations.length - 5} more</p>}
         </div>
       )}
       {regs.length > 0 && (
         <div className="bg-violet-500/5 border border-violet-500/10 rounded-lg p-3">
           <p className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider flex items-center gap-1 mb-1"><BookOpen className="w-3 h-3" /> Regulations Checked ({regs.length})</p>
-          {regs.slice(0, 4).map((c, i) => <p key={i} className="text-[11px] text-violet-300/70 pl-4 truncate">• {safeStr(c)}</p>)}
+          {regs.slice(0, 4).map((c, i) => <p key={i} className="text-[11px] text-violet-300/70 pl-4 break-words">• {safeStr(c)}</p>)}
           {regs.length > 4 && <p className="text-[10px] text-violet-400/50 pl-4">+{regs.length - 4} more</p>}
         </div>
       )}
@@ -95,7 +95,7 @@ export function ColdStorageResult({ r }) {
           <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">Alternatives ({alts.length})</p>
           {alts.slice(0, 3).map((a, i) => (
             <div key={i} className="flex items-center gap-2 text-[11px] py-0.5">
-              <span className="text-slate-400 truncate flex-1">{safeStr(a.name || a.id || `Alt ${i + 1}`)}</span>
+              <span className="text-slate-400 break-words flex-1">{safeStr(a.name || a.id || `Alt ${i + 1}`)}</span>
               {a.disqualified ? <span className="text-red-400 text-[10px]">{safeStr(a.disqualification_reason).replace(/_/g, ' ')}</span>
                 : a.suitability_tier && <span className="text-emerald-400 text-[10px]">{a.suitability_tier}</span>}
             </div>
@@ -106,19 +106,41 @@ export function ColdStorageResult({ r }) {
   );
 }
 
+const LOSS_BREAKDOWN_LABELS = {
+  product_loss_usd: 'Product loss',
+  disposal_cost_usd: 'Disposal cost',
+  handling_cost_usd: 'Handling cost',
+  downstream_disruption_usd: 'Downstream disruption',
+  risk_multiplier: 'Risk multiplier',
+};
+
 export function InsuranceResult({ r }) {
   if (!r) return null;
   const lb = r.loss_breakdown && typeof r.loss_breakdown === 'object' ? r.loss_breakdown : {};
+  // total_estimated_loss_usd (incl. downstream disruption) is the headline figure;
+  // estimated_loss_usd is the narrower direct-loss estimate shown as a breakdown row.
+  const headline = lb.total_estimated_loss_usd ?? r.estimated_loss_usd;
+  const headlineLabel = lb.total_estimated_loss_usd != null ? 'total estimated loss' : 'estimated loss';
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className="text-lg font-bold text-white">{r.estimated_loss_usd != null ? `$${Number(r.estimated_loss_usd).toLocaleString()}` : '—'}</span>
-        <span className="text-[10px] text-slate-500">estimated loss</span>
+        <span className="text-lg font-bold text-white">{headline != null ? `$${Number(headline).toLocaleString()}` : '—'}</span>
+        <span className="text-[10px] text-slate-500">{headlineLabel}</span>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
         <KV label="Product" value={r.product_name} />
         <KV label="Incident" value={r.incident_summary} />
-        {Object.keys(lb).length > 0 && Object.entries(lb).map(([k, v]) => <KV key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'number' ? `$${v.toLocaleString()}` : safeStr(v)} />)}
+        {r.estimated_loss_usd != null && lb.total_estimated_loss_usd != null && (
+          <KV label="Direct loss estimate" value={`$${Number(r.estimated_loss_usd).toLocaleString()}`} />
+        )}
+        {Object.entries(lb).filter(([k]) => k !== 'total_estimated_loss_usd').map(([k, v]) => (
+          <KV
+            key={k}
+            label={LOSS_BREAKDOWN_LABELS[k] || humanize(k)}
+            value={k === 'risk_multiplier' ? `${v}×` : (typeof v === 'number' ? `$${v.toLocaleString()}` : safeStr(v))}
+          />
+        ))}
         <KV label="Replacement" value={r.replacement_lead_time_days != null ? `${r.replacement_lead_time_days}d (${r.expedited_lead_time_days || '?'}d exp.)` : null} />
         <KV label="Substitute" value={r.substitute_available != null ? (r.substitute_available ? 'Available' : 'No') : null} />
       </div>
@@ -145,7 +167,7 @@ export function SchedulingResult({ r }) {
         <div className="space-y-2 mt-1">
           {recs.slice(0, 2).map((f, i) => (
             <div key={i} className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2.5 space-y-1">
-              <p className="text-[11px] text-white font-medium truncate">{safeStr(f.facility)}</p>
+              <p className="text-[11px] text-white font-medium break-words">{safeStr(f.facility)}</p>
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                 <KV label="Action" value={f.action?.replace(/_/g, ' ')} />
                 <KV label="Appointments" value={f.appointment_count} />

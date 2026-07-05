@@ -4,7 +4,7 @@ import { getApi } from './hooks/useApi';
 import { useApi } from './hooks/useApi';
 import {
   LayoutDashboard, Ship, ScrollText, CheckCircle, Activity,
-  Bot, GitBranch, ShieldAlert, Brain, Wifi, WifiOff, FlaskConical,
+  Bot, ShieldAlert, Brain, Wifi, WifiOff, FlaskConical,
 } from 'lucide-react';
 import Overview from './components/Overview';
 import ShipmentList from './components/ShipmentList';
@@ -13,9 +13,10 @@ import AuditLog from './components/AuditLog';
 import Approvals from './components/Approvals';
 import Monitoring from './components/Monitoring';
 import AgentActivity from './components/AgentActivity';
+import AgentRunDetail from './components/AgentRunDetail';
 import AgentQuality from './components/AgentQuality';
-import GraphView from './components/GraphView';
 import TopBar from './components/TopBar';
+import ThemeToggleButton from './components/ThemeToggleButton';
 import { OrchestrationStreamProvider } from './lib/OrchestrationStreamContext';
 
 const NAV = [
@@ -24,7 +25,6 @@ const NAV = [
   { to: '/shipments', icon: Ship, label: 'Shipments' },
   { to: '/agent', icon: Bot, label: 'Agent Activity' },
   { to: '/agent-quality', icon: FlaskConical, label: 'Agent Quality' },
-  { to: '/graph', icon: GitBranch, label: 'System Graph' },
   { to: '/audit', icon: ScrollText, label: 'Audit Log' },
   { to: '/approvals', icon: CheckCircle, label: 'Approvals', badgeKey: 'approvals' },
 ];
@@ -105,6 +105,10 @@ function Sidebar() {
         ))}
       </nav>
 
+      <div className="px-3 pb-2">
+        <ThemeToggleButton />
+      </div>
+
       <div className="border-t border-[var(--card-border)]">
         <LLMBadge />
         <div className="px-4 pb-4 text-[10px] text-[var(--text-secondary-2)] space-y-0.5">
@@ -130,8 +134,8 @@ export default function App() {
               <Route path="/shipments" element={<ShipmentList />} />
               <Route path="/shipments/:id" element={<ShipmentDetail />} />
               <Route path="/agent" element={<AgentActivity />} />
+              <Route path="/agent/runs/:runKey" element={<AgentRunDetail />} />
               <Route path="/agent-quality" element={<AgentQuality />} />
-              <Route path="/graph" element={<GraphView />} />
               <Route path="/audit" element={<AuditLog />} />
               <Route path="/approvals" element={<Approvals />} />
             </Routes>

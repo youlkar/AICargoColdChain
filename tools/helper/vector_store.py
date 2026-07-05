@@ -99,7 +99,11 @@ class ComplianceVectorStore:
         if self.use_mock:
             return self.mock_store.search(query, limit, similarity_threshold)
 
-        query_embedding = self.embedder.generate_embedding(query)
+        try:
+            query_embedding = self.embedder.generate_embedding(query)
+        except Exception as exc:
+            logger.error("Embedding generation failed: %s — returning empty results", exc)
+            return []
 
         try:
             resp = self.client.rpc(
@@ -113,16 +117,23 @@ class ComplianceVectorStore:
             return resp.data
         except Exception:
             logger.warning("RPC search failed, falling back to brute-force")
-            all_docs = (
-                self.client.table(self.table_name).select("*").limit(1000).execute()
-            )
-            results = []
-            for doc in all_docs.data:
-                sim = self.embedder.similarity(query_embedding, doc["embedding"])
-                if sim >= similarity_threshold:
-                    results.append({**doc, "similarity": sim})
-            results.sort(key=lambda x: x["similarity"], reverse=True)
-            return results[:limit]
+            try:
+                all_docs = (
+                    self.client.table(self.table_name).select("*").limit(1000).execute()
+                )
+                results = []
+                for doc in all_docs.data:
+                    try:
+                        sim = self.embedder.similarity(query_embedding, doc["embedding"])
+                        if sim >= similarity_threshold:
+                            results.append({**doc, "similarity": sim})
+                    except Exception:
+                        continue
+                results.sort(key=lambda x: x["similarity"], reverse=True)
+                return results[:limit]
+            except Exception as exc:
+                logger.error("Brute-force search also failed: %s", exc)
+                return []
 
     # ── helpers ──────────────────────────────────────────────────────
     def get_by_regulation_id(self, regulation_id: str) -> List[Dict]:

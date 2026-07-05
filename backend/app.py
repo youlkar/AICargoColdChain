@@ -40,7 +40,7 @@ from orchestrator.graph import (
     get_graph_mermaid,
     get_mode,
 )
-from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name
+from orchestrator.llm_provider import get_llm, get_provider_name, get_model_name, get_langsmith_client
 from src.context_assembler import build_window_context
 from src.data_loader import load_product_profiles
 
@@ -157,11 +157,23 @@ async def _process_stream_record(record: dict):
         scored = {
             "window_id": window_id,
             "shipment_id": record.get("shipment_id"),
-            "risk_score": round(final_score, 4),
+            "container_id": record.get("container_id", ""),
+            "product_id": record.get("product_id", ""),
+            "leg_id": leg_id,
+            "window_start": str(record.get("window_start", "")),
+            "window_end": str(record.get("window_end", "")),
+            "transit_phase": record.get("transit_phase", ""),
+            "avg_temp_c": round(float(record.get("avg_temp_c") or 0), 2),
+            "det_score": round(float(det_score), 4),
+            "ml_score": round(float(ml_score), 4),
+            "final_score": round(final_score, 4),
             "risk_tier": risk_tier,
-            "rules_fired": rules_fired,
+            "det_rules_fired": "; ".join(rules_fired),
+            "recommended_actions": "; ".join(actions),
+            "requires_human_approval": bool(requires_human),
         }
         await _broadcast({"type": "ingest_scored", "result": scored})
+        _append_scored_window_to_df(scored)
         _stream_stats["ingested"] += 1
 
         logger.info("STREAM_SCORED  %s tier=%s score=%.4f", window_id, risk_tier, final_score)
@@ -326,6 +338,15 @@ def _get_df() -> pd.DataFrame:
     return _df
 
 
+def _append_scored_window_to_df(scored: dict) -> None:
+    # Keeps /api/windows and /api/analytics current with newly-streamed,
+    # freshly-scored windows — purely an in-memory append, no extra DB read.
+    global _df
+    if _df is None:
+        return  # not loaded yet; the next _get_df() call will read the CSV fresh
+    _df = pd.concat([_df, pd.DataFrame([scored])], ignore_index=True)
+
+
 def _get_profiles() -> dict:
     global _profiles
     if _profiles is None:
@@ -393,19 +414,40 @@ async def ws_stream_orchestration(websocket: WebSocket, window_id: str):
 # Risk overview
 
 @app.get("/api/risk/overview", response_model=RiskOverview)
-def risk_overview():
-    df = _get_df()
-    tier_counts = df["risk_tier"].value_counts().to_dict()
-    total = len(df)
-    tier_pcts = {k: round(v / total * 100, 1) for k, v in tier_counts.items()}
+def risk_overview(hours: Optional[int] = Query(None, description="Restrict to escalated windows from the last N hours; omit for all time")):
+    from src.supabase_client import count_distinct_shipments
 
-    top = _build_shipment_summaries(df, top_n=10)
+    decisions = _fetch_decisions(hours=hours)
+
+    # Tier distribution reflects only escalated windows (MEDIUM/HIGH/CRITICAL).
+    # LOW-tier windows are never persisted anywhere, so they are intentionally
+    # excluded rather than guessed at.
+    tier_counts: Dict[str, int] = {}
+    for d in decisions:
+        tier = d.get("risk_tier", "LOW")
+        if tier != "LOW":
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+    total_escalated = sum(tier_counts.values())
+    tier_pcts = {k: round(v / total_escalated * 100, 1) for k, v in tier_counts.items()} if total_escalated else {}
+
+    total_shipments = count_distinct_shipments()
+    if total_shipments is None:
+        total_shipments = len({d.get("shipment_id") for d in decisions if d.get("shipment_id")})
+
+    all_summaries = _build_shipment_summaries_from_decisions(decisions, top_n=None)
+    escalated_shipments = len(all_summaries)
+    monitored_shipments = max(0, total_shipments - escalated_shipments)
+    total_value_at_risk_usd = round(sum(s.value_at_risk_usd for s in all_summaries), 2)
+
     return RiskOverview(
-        total_windows=total,
-        total_shipments=df["shipment_id"].nunique(),
+        total_windows=total_escalated,
+        total_shipments=total_shipments,
+        escalated_shipments=escalated_shipments,
+        monitored_shipments=monitored_shipments,
+        total_value_at_risk_usd=total_value_at_risk_usd,
         tier_counts=tier_counts,
         tier_pcts=tier_pcts,
-        top_risky_shipments=top,
+        top_risky_shipments=all_summaries[:10],
     )
 
 
@@ -413,8 +455,8 @@ def risk_overview():
 
 @app.get("/api/shipments", response_model=List[ShipmentSummary])
 def list_shipments(risk_tier: Optional[str] = Query(None)):
-    df = _get_df()
-    summaries = _build_shipment_summaries(df, top_n=None)
+    decisions = _fetch_decisions()
+    summaries = _build_shipment_summaries_from_decisions(decisions, top_n=None)
     if risk_tier:
         summaries = [s for s in summaries if s.latest_risk_tier == risk_tier]
     return summaries
@@ -422,11 +464,49 @@ def list_shipments(risk_tier: Optional[str] = Query(None)):
 
 @app.get("/api/shipments/{shipment_id}/windows", response_model=List[WindowRisk])
 def shipment_windows(shipment_id: str):
-    df = _get_df()
-    sub = df[df["shipment_id"] == shipment_id]
-    if sub.empty:
+    from src.supabase_client import fetch_window_features_by_shipment
+
+    telemetry = fetch_window_features_by_shipment(shipment_id)
+    if telemetry is None or telemetry.empty:
         raise HTTPException(404, f"Shipment {shipment_id} not found")
-    return [_row_to_window(row) for _, row in sub.iterrows()]
+
+    decisions_by_window = {
+        d["window_id"]: d for d in _fetch_decisions() if d.get("shipment_id") == shipment_id and d.get("window_id")
+    }
+
+    windows = []
+    for _, row in telemetry.sort_values("window_start").iterrows():
+        decision = decisions_by_window.get(row["window_id"])
+        if decision:
+            windows.append(WindowRisk(
+                window_id=row["window_id"],
+                shipment_id=row["shipment_id"],
+                container_id=row["container_id"],
+                product_id=_decision_product_category(decision) or row.get("product_id", ""),
+                leg_id=row["leg_id"],
+                window_start=str(row.get("window_start", "")),
+                window_end=str(row.get("window_end", "")),
+                transit_phase=str(row.get("transit_phase", "")),
+                avg_temp_c=round(float(row.get("avg_temp_c", 0)), 2),
+                escalated=True,
+                final_score=decision.get("fused_risk_score"),
+                risk_tier=decision.get("risk_tier"),
+                requires_human_approval=bool(decision.get("requires_approval", False)),
+            ))
+        else:
+            windows.append(WindowRisk(
+                window_id=row["window_id"],
+                shipment_id=row["shipment_id"],
+                container_id=row["container_id"],
+                product_id=row.get("product_id", ""),
+                leg_id=row["leg_id"],
+                window_start=str(row.get("window_start", "")),
+                window_end=str(row.get("window_end", "")),
+                transit_phase=str(row.get("transit_phase", "")),
+                avg_temp_c=round(float(row.get("avg_temp_c", 0)), 2),
+                escalated=False,
+            ))
+    return windows
 
 
 # Windows
@@ -574,6 +654,40 @@ async def decide_approval(approval_id: str, body: ApprovalDecision):
     return result
 
 
+def _post_hitl_feedback(record: dict, decision: str, decided_by: str, extra_scores: dict = None) -> None:
+    """Write the human review outcome back to the originating LangSmith trace."""
+    ls_run_id = record.get("ls_run_id")
+    if not ls_run_id:
+        return
+    client = get_langsmith_client()
+    if not client:
+        return
+    try:
+        src = {"source": "human_review_gate", "decided_by": decided_by}
+        approved = 1.0 if decision in ("approved", "confirmed") else 0.0
+        feedback_map = {
+            "human_approved":  approved,
+            "hitl_triggered":  1.0,
+            "decision_latency_s": (
+                (datetime.now(timezone.utc) -
+                 datetime.fromisoformat(record["created_at"].replace("Z", "+00:00"))
+                ).total_seconds()
+                if record.get("created_at") else 0.0
+            ),
+        }
+        if extra_scores:
+            feedback_map.update(extra_scores)
+        for key, score in feedback_map.items():
+            try:
+                client.create_feedback(run_id=ls_run_id, key=key, score=float(score),
+                                       comment=f"decided_by={decided_by}", source_info=src)
+            except Exception:
+                pass
+        logger.info("LangSmith HITL feedback posted (run=%s decision=%s)", ls_run_id[:8], decision)
+    except Exception as exc:
+        logger.debug("_post_hitl_feedback failed (non-fatal): %s", exc)
+
+
 @app.post("/api/approvals/{approval_id}/confirm")
 async def confirm_approved(approval_id: str, body: Dict[str, Any] = None):
     # Confirm that first-pass execution was sufficient — no additional tools needed.
@@ -594,6 +708,8 @@ async def confirm_approved(approval_id: str, body: Dict[str, Any] = None):
     final_output["_execution_mode"] = "confirmed"
     final_output["awaiting_approval"] = False
     final_output["review_status"] = "confirmed"
+
+    _post_hitl_feedback(record, "confirmed", decided_by)
 
     await _replace_or_append_history(approval_id, record.get("window_id", ""), final_output)
     await _broadcast({"type": "approval_confirmed", "approval_id": approval_id, "record": final_output})
@@ -667,6 +783,10 @@ async def execute_approved(approval_id: str, body: Dict[str, Any] = None):
         existing = list(final_output.get("actions_taken") or [])
         final_output["actions_taken"] = existing + post_approval_results
         final_output["post_approval_actions"] = post_approval_results
+
+    deferred_run_count = len([r for r in post_approval_results if r.get("success")])
+    _post_hitl_feedback(record, "approved", decided_by,
+                        extra_scores={"deferred_tools_run": float(deferred_run_count)})
 
     await _replace_or_append_history(approval_id, record.get("window_id", ""), final_output)
     await _broadcast({"type": "approval_executed", "approval_id": approval_id, "decision": final_output})
@@ -1025,6 +1145,16 @@ async def ingest_window(payload: Dict[str, Any]):
     from src.deterministic_engine import score_row
     from src.risk_fusion import fuse_scores
 
+    required = ["product_id", "leg_id", "window_id", "window_start", "window_end", "avg_temp_c"]
+    missing = [f for f in required if f not in payload]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing required fields: {missing}. "
+                   "POST a full window_features row including product_id, leg_id, window_id, "
+                   "window_start, window_end, avg_temp_c, and all sensor columns.",
+        )
+
     profiles = _get_profiles()
     row_df = pd.DataFrame([payload])
     for col in ("window_start", "window_end"):
@@ -1144,7 +1274,88 @@ def analytics():
     }
 
 
-# Helpers
+# Helpers — orchestrator_runs (live Supabase decisions)
+
+def _fetch_decisions(hours: Optional[int] = None) -> List[dict]:
+    # All persisted orchestrator decisions, i.e. windows that escalated to
+    # MEDIUM/HIGH/CRITICAL (see _TIERS_TO_ORCHESTRATE). LOW-tier windows are
+    # never persisted anywhere, so they cannot appear here.
+    from src.supabase_client import fetch_orchestrator_runs
+    decisions = fetch_orchestrator_runs(limit=5000) or []
+    if hours:
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
+        decisions = [
+            d for d in decisions
+            if (ts := _decision_timestamp(d)) is not None and ts >= cutoff
+        ]
+    return decisions
+
+
+def _decision_timestamp(decision: dict) -> Optional[pd.Timestamp]:
+    ts = decision.get("timestamp")
+    if not ts:
+        return None
+    parsed = pd.Timestamp(ts)
+    if parsed.tzinfo is None:
+        parsed = parsed.tz_localize("UTC")
+    else:
+        parsed = parsed.tz_convert("UTC")
+    return parsed
+
+
+def _decision_product_category(decision: dict) -> str:
+    # product_id isn't a top-level field on the decision; it's nested inside
+    # the first action's logged details (every escalated window logs a
+    # compliance/risk-assessment action first).
+    for action in decision.get("actions_taken") or []:
+        details = (action.get("input") or {}).get("details") or {}
+        if details.get("product_category"):
+            return details["product_category"]
+    return ""
+
+
+def _build_shipment_summaries_from_decisions(
+    decisions: List[dict], top_n: Optional[int] = 10,
+) -> List[ShipmentSummary]:
+    from src.supabase_client import load_costs_with_fallback
+
+    costs = load_costs_with_fallback()
+
+    by_shipment: Dict[str, List[dict]] = {}
+    for d in decisions:
+        sid = d.get("shipment_id")
+        if sid:
+            by_shipment.setdefault(sid, []).append(d)
+
+    summaries = []
+    for sid, group in by_shipment.items():
+        total = len(group)
+        tier_counts: Dict[str, int] = {}
+        for d in group:
+            tier = d.get("risk_tier", "LOW")
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+        latest = max(group, key=lambda d: _decision_timestamp(d) or pd.Timestamp.min.tz_localize("UTC"))
+        scores = [d.get("fused_risk_score") for d in group if d.get("fused_risk_score") is not None]
+        products = sorted({_decision_product_category(d) for d in group if _decision_product_category(d)})
+        value_at_risk_usd = sum(costs.get(pid, {}).get("shipment_value_usd", 0) for pid in products)
+        summaries.append(ShipmentSummary(
+            shipment_id=sid,
+            containers=sorted({d.get("container_id", "") for d in group if d.get("container_id")}),
+            products=products,
+            total_windows=total,
+            latest_risk_tier=latest.get("risk_tier", "LOW"),
+            max_fused_score=round(max(scores), 4) if scores else 0.0,
+            pct_critical=round(tier_counts.get("CRITICAL", 0) / total * 100, 1),
+            pct_high=round(tier_counts.get("HIGH", 0) / total * 100, 1),
+            value_at_risk_usd=round(value_at_risk_usd, 2),
+        ))
+    summaries.sort(key=lambda s: s.max_fused_score, reverse=True)
+    if top_n:
+        return summaries[:top_n]
+    return summaries
+
+
+# Helpers — CSV-backed (still used by /api/windows, /api/windows/{id})
 
 def _build_shipment_summaries(
     df: pd.DataFrame, top_n: Optional[int] = 10,

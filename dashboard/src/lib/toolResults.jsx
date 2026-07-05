@@ -30,6 +30,12 @@ export function safeStr(val) {
   return String(val);
 }
 
+export function humanize(str) {
+  if (!str) return '';
+  const s = String(str).replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function NotificationResult({ r }) {
   if (!r) return null;
   const ap = r.alert_payload || {};
@@ -64,7 +70,7 @@ export function NotificationResult({ r }) {
               <span className={`w-1.5 h-1.5 rounded-full ${n.status === 'sent' ? 'bg-emerald-400' : 'bg-red-400'}`} />
               <span className="text-slate-300 font-medium">{n.recipient_name || n.recipient_role}</span>
               <span className="text-slate-500">via {n.channel}</span>
-              {n.subject && <span className="text-cyan-300/80 truncate ml-auto max-w-[200px]">"{n.subject}"</span>}
+              {n.subject && <span className="text-cyan-300/80 break-words ml-auto">"{n.subject}"</span>}
             </div>
           ))}
           {sent.length > 4 && <p className="text-[10px] text-slate-500">+{sent.length - 4} more</p>}

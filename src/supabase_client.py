@@ -99,6 +99,49 @@ def fetch_window_by_id(window_id: str) -> Optional[dict]:
         return None
 
 
+def fetch_window_features_by_shipment(shipment_id: str) -> Optional[pd.DataFrame]:
+    # Fetch raw telemetry rows for a single shipment (full window history, no scores).
+    client = _get_client()
+    if client is None:
+        return None
+    try:
+        resp = (
+            client.table("window_features")
+            .select("*")
+            .eq("shipment_id", shipment_id)
+            .execute()
+        )
+        if not resp.data:
+            return pd.DataFrame()
+        df = pd.DataFrame(resp.data)
+        drop_cols = [c for c in ("id", "ingested_at") if c in df.columns]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+        for col in ("window_start", "window_end"):
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
+                df[col] = df[col].dt.tz_localize(None)
+        return df
+    except Exception as e:
+        logger.error("window_features fetch by shipment failed: %s", e)
+        return None
+
+
+def count_distinct_shipments() -> Optional[int]:
+    # Count distinct shipment_id values in window_features (cheap population count).
+    client = _get_client()
+    if client is None:
+        return None
+    try:
+        resp = client.table("window_features").select("shipment_id").execute()
+        if resp.data is None:
+            return None
+        return len({row["shipment_id"] for row in resp.data if row.get("shipment_id")})
+    except Exception as e:
+        logger.error("distinct shipment count failed: %s", e)
+        return None
+
+
 # Product Profiles
 
 _profiles_cache: Optional[Dict[str, dict]] = None

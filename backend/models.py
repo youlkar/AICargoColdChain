@@ -107,6 +107,7 @@ class ShipmentSummary(BaseModel):
     max_fused_score: float
     pct_critical: float
     pct_high: float
+    value_at_risk_usd: float = 0.0
 
 
 class WindowRisk(BaseModel):
@@ -119,18 +120,22 @@ class WindowRisk(BaseModel):
     window_end: str
     transit_phase: str
     avg_temp_c: float
-    det_score: float
-    ml_score: float
-    final_score: float
-    risk_tier: RiskTier
-    det_rules_fired: str
-    recommended_actions: str
-    requires_human_approval: bool
+    escalated: bool = False
+    det_score: Optional[float] = None
+    ml_score: Optional[float] = None
+    final_score: Optional[float] = None
+    risk_tier: Optional[RiskTier] = None
+    det_rules_fired: str = ""
+    recommended_actions: str = ""
+    requires_human_approval: bool = False
 
 
 class RiskOverview(BaseModel):
     total_windows: int
     total_shipments: int
+    escalated_shipments: int = 0
+    monitored_shipments: int = 0
+    total_value_at_risk_usd: float = 0.0
     tier_counts: Dict[str, int]
     tier_pcts: Dict[str, float]
     top_risky_shipments: List[ShipmentSummary]

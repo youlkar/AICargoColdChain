@@ -11,3 +11,23 @@ export function timeAgo(timestamp) {
   const diffDay = Math.floor(diffHr / 24);
   return `${diffDay}d ago`;
 }
+
+export function formatUsdCompact(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+export function formatTimestamp(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

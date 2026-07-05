@@ -85,8 +85,15 @@ class VectorComplianceAgent:
         logger.info("Compliance search: %s", query[:120])
 
         if self.vector_enabled:
-            regs = self.vector_store.search(query=query, limit=5, similarity_threshold=0.3)
-            logger.info("Vector search returned %d regulations", len(regs))
+            try:
+                regs = self.vector_store.search(query=query, limit=5, similarity_threshold=0.3)
+                logger.info("Vector search returned %d regulations", len(regs))
+                if not regs:
+                    logger.warning("Vector search returned 0 results — using fallback regulations")
+                    regs = self._fallback_regulations(state)
+            except Exception as exc:
+                logger.warning("Vector search failed (%s) — using fallback regulations", exc)
+                regs = self._fallback_regulations(state)
         else:
             regs = self._fallback_regulations(state)
             logger.info("Using %d fallback regulations", len(regs))
@@ -380,7 +387,7 @@ def _run_async(coro):
         return asyncio.run(coro)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=30)
+        return pool.submit(asyncio.run, coro).result(timeout=60)
 
 
 # LangChain tool wrapper

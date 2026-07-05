@@ -16,6 +16,39 @@ _cached_provider: Optional[str] = None
 _cached_llm = None
 
 
+_cached_ls_client = None
+
+
+def get_langsmith_client():
+    """Return a live LangSmith Client, or None when tracing is disabled."""
+    global _cached_ls_client
+    if _cached_ls_client is not None:
+        return _cached_ls_client
+    tracing = (
+        os.environ.get("LANGSMITH_TRACING", "")
+        or os.environ.get("LANGCHAIN_TRACING_V2", "")
+    ).lower()
+    if tracing != "true":
+        return None
+    api_key = (
+        os.environ.get("LANGSMITH_API_KEY")
+        or os.environ.get("LANGCHAIN_API_KEY")
+    )
+    endpoint = (
+        os.environ.get("LANGSMITH_ENDPOINT")
+        or os.environ.get("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    )
+    if not api_key:
+        return None
+    try:
+        from langsmith import Client as LangSmithClient
+        _cached_ls_client = LangSmithClient(api_url=endpoint, api_key=api_key)
+        return _cached_ls_client
+    except Exception as e:
+        logger.warning("LangSmith client init failed: %s", e)
+        return None
+
+
 def _get_tracer_callbacks() -> list:
     tracing = (
         os.environ.get("LANGSMITH_TRACING", "")

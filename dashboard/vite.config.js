@@ -17,5 +17,13 @@ export default defineConfig(({ mode }) => {
         '/ws/stream': { target: wsBackend, ws: true },
       },
     },
+    test: {
+      environment: 'jsdom',
+      environmentOptions: {
+        jsdom: { url: 'http://localhost/' },
+      },
+      globals: true,
+      setupFiles: './src/test/setup.js',
+    },
   }
 })
