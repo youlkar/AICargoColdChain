@@ -11,7 +11,7 @@ import TierBadge from './TierBadge';
 function LiveIndicator() {
   const { connected } = useWebSocket([]);
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs panel-sm">
+    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs" style={{ background: connected ? 'color-mix(in oklab, var(--accent-emerald) 10%, transparent)' : undefined, border: connected ? '1px solid color-mix(in oklab, var(--accent-emerald) 25%, transparent)' : '1px solid var(--card-border)' }}>
       {connected
         ? <Wifi className="w-3.5 h-3.5" style={{ color: 'var(--accent-emerald)' }} />
         : <WifiOff className="w-3.5 h-3.5 text-[var(--text-secondary-2)]" />}
@@ -94,7 +94,7 @@ function UserMenu() {
 
 export default function TopBar() {
   return (
-    <header className="h-14 shrink-0 flex items-center gap-3 px-4 border-b border-[var(--card-border)]">
+    <header className="h-[52px] shrink-0 flex items-center gap-3 px-4 border-b border-[var(--card-border)]">
       <CommandPalette />
       <div className="ml-auto flex items-center gap-2">
         <LiveIndicator />
