@@ -83,6 +83,7 @@ function Sidebar() {
       </div>
 
       <nav className="flex-1 py-4 px-3 space-y-0.5">
+        <p className="px-3 mb-1 text-[10px] uppercase tracking-widest text-[var(--text-secondary-2)]">MAIN</p>
         {NAV.map(({ to, icon: Icon, label, badgeKey }) => (
           <NavLink key={to} to={to} end={to === '/'}>
             {({ isActive }) => (
@@ -105,11 +106,8 @@ function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-3 pb-2">
-        <ThemeToggleButton />
-      </div>
-
       <div className="border-t border-[var(--card-border)]">
+        <ThemeToggleButton />
         <LLMBadge />
         <div className="px-4 pb-4 text-[10px] text-[var(--text-secondary-2)] space-y-0.5">
           <p>GDP / FDA 21 CFR 11 Compliant</p>
