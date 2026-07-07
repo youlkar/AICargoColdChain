@@ -7,11 +7,22 @@ import TierBadge from './TierBadge';
 import { TIER_COLORS, TIER_ORDER } from '../lib/colors';
 import ColdChainPulse from './shared/ColdChainPulse';
 import { StatCardSkeleton, ChartSkeleton, ErrorState, EmptyState } from './shared/States';
-import AgentChip from './shared/AgentChip';
 import { getAgentHeadline } from '../lib/agentSummaries';
 import { timeAgo, formatUsdCompact } from '../lib/format';
 import { safeStr } from '../lib/toolResults';
 import KpiCard from './shared/KpiCard';
+
+// Short display labels for agent feed chips — matching mockup aesthetic
+const AGENT_FEED_CHIPS = {
+  triage_agent:       { label: 'RISK',       bg: 'rgba(239,68,68,0.12)',   color: '#f87171' },
+  compliance_agent:   { label: 'COMPLIANCE', bg: 'rgba(139,92,246,0.12)',  color: '#a78bfa' },
+  notification_agent: { label: 'NOTIFY',     bg: 'rgba(34,211,238,0.12)',  color: '#22d3ee' },
+  approval_workflow:  { label: 'ESCALATION', bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24' },
+  cold_storage_agent: { label: 'STORAGE',    bg: 'rgba(56,189,248,0.12)',  color: '#38bdf8' },
+  route_agent:        { label: 'ROUTE',      bg: 'rgba(34,211,238,0.12)',  color: '#22d3ee' },
+  insurance_agent:    { label: 'INSURE',     bg: 'rgba(52,211,153,0.12)',  color: '#34d399' },
+  _default:           { label: 'AGENT',      bg: 'rgba(148,163,184,0.10)', color: '#94a3b8' },
+};
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -299,7 +310,7 @@ export default function Overview() {
             </div>
             <Link to="/agent" className="text-[11px] font-semibold font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all →</Link>
           </div>
-          <div className="px-4 py-2.5">
+          <div className="px-4 py-2">
             {recentActions.length === 0 ? (
               <EmptyState icon={Bot} title="No agent activity yet"
                 description="Run the orchestrator from the Agent Activity page to see actions here." />
@@ -307,11 +318,13 @@ export default function Overview() {
               <div>
                 {recentActions.slice(0, 6).map((item, i) => {
                   const headline = getAgentHeadline(item.action.tool, item.action);
+                  const chip = AGENT_FEED_CHIPS[item.action.tool] || AGENT_FEED_CHIPS._default;
                   return (
-                    <div key={i} className="flex items-center gap-2.5 py-2 border-b border-[var(--card-border)] last:border-0">
-                      <AgentChip toolId={item.action.tool} size="sm" />
+                    <div key={i} className="flex items-center gap-2 py-[7px] border-b border-[var(--card-border)] last:border-0">
+                      <span className="shrink-0 rounded-md px-[7px] py-[3px] text-[10px] font-bold tracking-wide"
+                        style={{ background: chip.bg, color: chip.color }}>{chip.label}</span>
                       <span className="text-[11.5px] truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>{headline.title}</span>
-                      <span className="text-[10px] font-data shrink-0" style={{ color: 'rgba(148,163,184,0.4)' }}>{timeAgo(item.timestamp)}</span>
+                      <span className="text-[10px] font-data shrink-0" style={{ color: 'rgba(148,163,184,0.35)' }}>{timeAgo(item.timestamp)}</span>
                     </div>
                   );
                 })}
