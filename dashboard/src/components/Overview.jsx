@@ -114,7 +114,7 @@ export default function Overview() {
               <button key={h} onClick={() => setRangeHours(h)}
                 className="px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition"
                 style={rangeHours === h
-                  ? { backgroundColor: 'var(--card-border)', color: 'var(--text-primary)' }
+                  ? { backgroundColor: 'rgba(34,211,238,0.10)', color: 'var(--accent-cyan)' }
                   : { color: 'var(--text-secondary-2)' }}>
                 {label}
               </button>
@@ -129,31 +129,37 @@ export default function Overview() {
 
       {/* Section 2 — Hero banner */}
       <div
-        className="panel p-5 "
-        style={{ background: 'color-mix(in oklab, var(--accent-cyan) 4%, var(--card-bg))' }}
+        className="relative overflow-hidden rounded-2xl p-5"
+        style={{
+          background: 'linear-gradient(135deg, #0e3a4f 0%, #0a2d3d 50%, #0d1f35 100%)',
+          border: '1px solid rgba(34,211,238,0.15)',
+        }}
       >
-        <div className="grid grid-cols-4 divide-x divide-[var(--card-border)]">
+        {/* glow blob */}
+        <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.08) 0%, transparent 70%)' }} />
+        <div className="grid grid-cols-4 divide-x divide-[rgba(34,211,238,0.10)]">
           {/* Col 1 — Fleet Size */}
           <div className="px-6 first:pl-0">
-            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary-2)' }}>Fleet Size</p>
-            <p className="text-3xl font-extrabold font-data leading-tight" style={{ color: 'var(--text-primary)' }}>{statValues.shipments}</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary-2)' }}>Active shipments in transit</p>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Fleet Size</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight text-white">{statValues.shipments}</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(148,163,184,0.6)' }}>Active shipments in transit</p>
           </div>
 
           {/* Col 2 — Value at Risk */}
           <div className="px-6">
-            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary-2)' }}>Value at Risk</p>
-            <p className="text-3xl font-extrabold font-data leading-tight" style={{ color: 'var(--text-primary)' }}>{statValues.valueAtRisk}</p>
-            <p className="text-xs mt-1 font-data" style={{ color: statValues.escalated > 0 ? 'var(--accent-red)' : 'var(--text-secondary-2)' }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Value at Risk</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight text-white">{statValues.valueAtRisk}</p>
+            <p className="text-xs mt-1 font-data" style={{ color: statValues.escalated > 0 ? '#fca5a5' : 'rgba(148,163,184,0.6)' }}>
               {statValues.escalated} escalated
             </p>
           </div>
 
           {/* Col 3 — Escalated Windows */}
           <div className="px-6">
-            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary-2)' }}>Escalated Windows</p>
-            <p className="text-3xl font-extrabold font-data leading-tight" style={{ color: totalWindows > 0 ? 'var(--accent-amber)' : 'var(--text-primary)' }}>{totalWindows}</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary-2)' }}>across all risk tiers</p>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Escalated Windows</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight" style={{ color: totalWindows > 0 ? '#fbbf24' : 'white' }}>{totalWindows}</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(148,163,184,0.6)' }}>across all risk tiers</p>
           </div>
 
           {/* Col 4 — Action buttons */}
@@ -169,8 +175,8 @@ export default function Overview() {
             )}
             <Link
               to="/agent"
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold font-heading transition"
-              style={{ backgroundColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold font-heading transition hover:opacity-90"
+              style={{ backgroundColor: 'var(--accent-cyan)', color: '#0b1120' }}
             >
               Run Orchestrator
             </Link>

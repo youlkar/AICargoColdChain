@@ -13,7 +13,7 @@ function LiveIndicator() {
   return (
     <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs" style={{ background: connected ? 'color-mix(in oklab, var(--accent-emerald) 10%, transparent)' : undefined, border: connected ? '1px solid color-mix(in oklab, var(--accent-emerald) 25%, transparent)' : '1px solid var(--card-border)' }}>
       {connected
-        ? <Wifi className="w-3.5 h-3.5" style={{ color: 'var(--accent-emerald)' }} />
+        ? <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent-emerald)', flexShrink: 0 }} />
         : <WifiOff className="w-3.5 h-3.5 text-[var(--text-secondary-2)]" />}
       <span className="font-heading font-medium" style={{ color: connected ? 'var(--accent-emerald)' : 'var(--text-secondary-2)' }}>
         {connected ? 'Live' : 'Offline'}
