@@ -9,7 +9,7 @@
 const GRADIENTS = {
   blue:   'var(--kpi-blue-start), var(--kpi-blue-end)',
   purple: 'var(--kpi-purple-start), var(--kpi-purple-end)',
-  amber:  '#78350f, #d97706',
+  amber:  'var(--kpi-amber-start), var(--kpi-amber-end)',
   teal:   'var(--kpi-teal-start), var(--kpi-teal-end)',
 };
 

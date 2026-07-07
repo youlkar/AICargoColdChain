@@ -30,6 +30,8 @@
   --kpi-blue-end:     #1d4ed8;
   --kpi-purple-start: #3b1c8c;
   --kpi-purple-end:   #7c3aed;
+  --kpi-amber-start:  #78350f;
+  --kpi-amber-end:    #d97706;
   --kpi-teal-start:   #0f4c4c;
   --kpi-teal-end:     #0d9488;
   --font-heading: 'Sora', system-ui, -apple-system, sans-serif;
@@ -166,6 +168,8 @@ html.light {
   --kpi-blue-end:     #2563eb;
   --kpi-purple-start: #5b21b6;
   --kpi-purple-end:   #7c3aed;
+  --kpi-amber-start:  #92400e;
+  --kpi-amber-end:    #b45309;
   --kpi-teal-start:   #134e4a;
   --kpi-teal-end:     #0f766e;
 }
