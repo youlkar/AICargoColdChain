@@ -247,29 +247,37 @@ export default function Overview() {
       <div className="grid gap-4 " style={{ gridTemplateColumns: '1fr 2.4fr 1fr' }}>
 
         {/* Left — Tier Distribution */}
-        <div className="panel p-4">
-          <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)] mb-1">Tier Distribution</h2>
-          <p className="text-[11px] text-[var(--text-secondary-2)] mb-3">Escalated windows only</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                innerRadius={48} outerRadius={75} paddingAngle={3} strokeWidth={0}>
-                {pieData.map(d => (
-                  <Cell key={d.name} fill={TIER_COLORS[d.name]} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <text x="50%" y="46%" textAnchor="middle" className="fill-[var(--text-primary)] text-xl font-bold font-data">{totalWindows}</text>
-              <text x="50%" y="58%" textAnchor="middle" className="fill-[var(--text-secondary-2)] text-[10px]">escalated</text>
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center flex-wrap gap-3 mt-2">
-            {pieData.map(d => (
-              <span key={d.name} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary-2)] font-heading">
-                <span className="w-2 h-2 rounded-full" style={{ background: TIER_COLORS[d.name] }} />
-                {d.name} <span className="font-data">{d.value}</span>
-              </span>
-            ))}
+        <div className="panel overflow-hidden">
+          <div className="px-4 py-3.5 border-b border-[var(--card-border)]">
+            <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Tier Distribution</h2>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Escalated windows only</p>
+          </div>
+          <div className="px-4 py-3">
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                  innerRadius={46} outerRadius={72} paddingAngle={3} strokeWidth={0}>
+                  {pieData.map(d => (
+                    <Cell key={d.name} fill={TIER_COLORS[d.name]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <text x="50%" y="46%" textAnchor="middle" className="fill-[var(--text-primary)] text-xl font-bold font-data">{totalWindows}</text>
+                <text x="50%" y="58%" textAnchor="middle" className="fill-[var(--text-secondary-2)] text-[10px]">escalated</text>
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Vertical legend matching mockup */}
+            <div className="space-y-2 mt-1 px-2">
+              {pieData.map(d => (
+                <div key={d.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-secondary-2)' }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TIER_COLORS[d.name] }} />
+                    {d.name.charAt(0) + d.name.slice(1).toLowerCase()}
+                  </div>
+                  <span className="text-[12px] font-bold font-data" style={{ color: TIER_COLORS[d.name] }}>{d.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -283,37 +291,42 @@ export default function Overview() {
         />
 
         {/* Right — Live Agent Activity */}
-        <div className="panel p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
-            <Link to="/agent" className="text-xs font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all &rarr;</Link>
-          </div>
-          {recentActions.length === 0 ? (
-            <EmptyState icon={Bot} title="No agent activity yet"
-              description="Run the orchestrator from the Agent Activity page to see actions here." />
-          ) : (
-            <div className="space-y-1">
-              {recentActions.slice(0, 6).map((item, i) => {
-                const headline = getAgentHeadline(item.action.tool, item.action);
-                return (
-                  <div key={i} className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-white/[0.02] transition">
-                    <AgentChip toolId={item.action.tool} size="sm" labelClassName="hidden" />
-                    <span className="text-xs truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>{headline.title}</span>
-                    <span className="text-[10px] font-data shrink-0" style={{ color: 'var(--text-secondary-2)' }}>{timeAgo(item.timestamp)}</span>
-                  </div>
-                );
-              })}
+        <div className="panel overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--card-border)]">
+            <div>
+              <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
+              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Last 6 actions</p>
             </div>
-          )}
+            <Link to="/agent" className="text-[11px] font-semibold font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all →</Link>
+          </div>
+          <div className="px-4 py-2.5">
+            {recentActions.length === 0 ? (
+              <EmptyState icon={Bot} title="No agent activity yet"
+                description="Run the orchestrator from the Agent Activity page to see actions here." />
+            ) : (
+              <div>
+                {recentActions.slice(0, 6).map((item, i) => {
+                  const headline = getAgentHeadline(item.action.tool, item.action);
+                  return (
+                    <div key={i} className="flex items-center gap-2.5 py-2 border-b border-[var(--card-border)] last:border-0">
+                      <AgentChip toolId={item.action.tool} size="sm" />
+                      <span className="text-[11.5px] truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>{headline.title}</span>
+                      <span className="text-[10px] font-data shrink-0" style={{ color: 'rgba(148,163,184,0.4)' }}>{timeAgo(item.timestamp)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Section 6 — Shipment Risk Table */}
-      <div className="panel p-6">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+      <div className="panel overflow-hidden">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-4 border-b border-[var(--card-border)]">
           <div>
-            <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
-            <p className="text-[11px] text-[var(--text-secondary-2)] mt-0.5">Click a row for shipment details</p>
+            <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Click a row for shipment details</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1.5 panel-sm px-2.5 py-1.5">
@@ -336,15 +349,16 @@ export default function Overview() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--card-border)] text-left text-[11px] text-[var(--text-secondary-2)] uppercase tracking-wider font-heading">
-                <th className="pb-3 pr-4 font-medium">Shipment</th>
-                <th className="pb-3 pr-4 font-medium">Containers</th>
-                <th className="pb-3 pr-4 font-medium">Products</th>
-                <th className="pb-3 pr-4 font-medium">Windows</th>
-                <th className="pb-3 pr-4 font-medium">Latest Tier</th>
-                <th className="pb-3 pr-6 font-medium">Max Score</th>
-                <th className="pb-3 pr-4 font-medium text-right">% Critical</th>
-                <th className="pb-3 pr-4 font-medium text-right">Value at Risk</th>
+              <tr className="border-b border-[var(--card-border)] text-left text-[11px] text-[var(--text-secondary-2)] uppercase tracking-wider font-heading"
+                style={{ background: 'rgba(148,163,184,0.02)' }}>
+                <th className="px-3.5 py-2.5 font-medium first:pl-5">Shipment</th>
+                <th className="px-3.5 py-2.5 font-medium">Containers</th>
+                <th className="px-3.5 py-2.5 font-medium">Products</th>
+                <th className="px-3.5 py-2.5 font-medium">Windows</th>
+                <th className="px-3.5 py-2.5 font-medium">Latest Tier</th>
+                <th className="px-3.5 py-2.5 font-medium">Max Score</th>
+                <th className="px-3.5 py-2.5 font-medium text-right">% Critical</th>
+                <th className="px-3.5 py-2.5 font-medium text-right pr-5">Value at Risk</th>
               </tr>
             </thead>
             <tbody>
@@ -358,17 +372,17 @@ export default function Overview() {
                     onClick={() => navigate(`/shipments/${s.shipment_id}`)}
                     className="border-b border-[var(--card-border)] hover:bg-white/[0.03] transition animate-fade-in cursor-pointer"
                     style={{ animationDelay: `${760 + i * 40}ms` }}>
-                  <td className="py-3 pr-4">
+                  <td className="py-2.5 px-3.5 first:pl-5">
                     <span className="font-medium font-data flex items-center gap-1.5" style={{ color: 'var(--accent-cyan)' }}>
                       {s.shipment_id}
                       <ChevronRight className="w-3.5 h-3.5 opacity-50" />
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-[var(--text-secondary-2)]">{s.containers.join(', ')}</td>
-                  <td className="py-3 pr-4 text-[var(--text-secondary-2)]">{s.products.join(', ')}</td>
-                  <td className="py-3 pr-4 text-[var(--text-primary)] font-data">{s.total_windows}</td>
-                  <td className="py-3 pr-4"><TierBadge tier={s.latest_risk_tier} /></td>
-                  <td className="py-3 pr-6">
+                  <td className="py-2.5 px-3.5 text-[var(--text-secondary-2)]">{s.containers.join(', ')}</td>
+                  <td className="py-2.5 px-3.5 text-[var(--text-secondary-2)]">{s.products.join(', ')}</td>
+                  <td className="py-2.5 px-3.5 text-[var(--text-primary)] font-data">{s.total_windows}</td>
+                  <td className="py-2.5 px-3.5 first:pl-5"><TierBadge tier={s.latest_risk_tier} /></td>
+                  <td className="py-2.5 px-3.5">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 max-w-[64px] h-1.5 rounded-full" style={{ backgroundColor: 'var(--card-border)' }}>
                         <div className="h-1.5 rounded-full" style={{
@@ -379,12 +393,12 @@ export default function Overview() {
                       <span className="font-data text-[var(--text-primary)] shrink-0">{s.max_fused_score.toFixed(4)}</span>
                     </div>
                   </td>
-                  <td className="py-3 pr-4 text-right">
+                  <td className="py-2.5 px-3.5 text-right">
                     <span className="font-data" style={{ color: s.pct_critical > 30 ? 'var(--accent-red)' : 'var(--text-secondary-2)' }}>
                       {s.pct_critical}%
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-right">
+                  <td className="py-2.5 px-3.5 text-right">
                     <span className="font-data font-semibold" style={{ color: 'var(--accent-amber)' }}>
                       {formatUsdCompact(s.value_at_risk_usd)}
                     </span>
