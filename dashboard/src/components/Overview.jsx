@@ -12,6 +12,7 @@ import AgentChip from './shared/AgentChip';
 import { getAgentHeadline } from '../lib/agentSummaries';
 import { timeAgo, formatUsdCompact } from '../lib/format';
 import { safeStr } from '../lib/toolResults';
+import KpiCard from './shared/KpiCard';
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -98,33 +99,89 @@ export default function Overview() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="p-6 max-w-7xl mx-auto space-y-5">
+
+      {/* Section 1 — Page header */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
         <div>
-          <h1 className="text-2xl font-bold font-heading text-[var(--text-primary)]">Cold-Chain Overview</h1>
-          <p className="text-sm text-[var(--text-secondary-2)] mt-0.5">
+          <h1 className="text-2xl font-bold font-heading" style={{ color: 'var(--text-primary)' }}>Cold-Chain Overview</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>
             {data.total_shipments} active shipments &middot; last updated {lastUpdated}
           </p>
         </div>
-        <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: 'var(--bg-page)' }}>
-          {[[24, '24h'], [168, '7d'], [0, 'All']].map(([h, label]) => (
-            <button key={h} onClick={() => setRangeHours(h)}
-              className="px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition"
-              style={rangeHours === h
-                ? { backgroundColor: 'var(--card-border)', color: 'var(--text-primary)' }
-                : { color: 'var(--text-secondary-2)' }}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 panel-sm px-3 py-2">
-          <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent-emerald)' }} />
-          <span className="text-xs font-heading font-medium" style={{ color: 'var(--accent-emerald)' }}>GDP Compliant</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: 'var(--bg-page)' }}>
+            {[[24, '24h'], [168, '7d'], [0, 'All']].map(([h, label]) => (
+              <button key={h} onClick={() => setRangeHours(h)}
+                className="px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition"
+                style={rangeHours === h
+                  ? { backgroundColor: 'var(--card-border)', color: 'var(--text-primary)' }
+                  : { color: 'var(--text-secondary-2)' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 panel-sm px-3 py-2">
+            <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent-emerald)' }} />
+            <span className="text-xs font-heading font-medium" style={{ color: 'var(--accent-emerald)' }}>GDP Compliant</span>
+          </div>
         </div>
       </div>
 
+      {/* Section 2 — Hero banner */}
+      <div
+        className="panel p-5 mb-5"
+        style={{ background: 'color-mix(in oklab, var(--accent-cyan) 4%, var(--card-bg))' }}
+      >
+        <div className="grid grid-cols-4 divide-x divide-[var(--card-border)]">
+          {/* Col 1 — Fleet Size */}
+          <div className="px-6 first:pl-0">
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary-2)' }}>Fleet Size</p>
+            <p className="text-3xl font-extrabold font-data leading-tight" style={{ color: 'var(--text-primary)' }}>{statValues.shipments}</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary-2)' }}>Active shipments in transit</p>
+          </div>
+
+          {/* Col 2 — Value at Risk */}
+          <div className="px-6">
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary-2)' }}>Value at Risk</p>
+            <p className="text-3xl font-extrabold font-data leading-tight" style={{ color: 'var(--text-primary)' }}>{statValues.valueAtRisk}</p>
+            <p className="text-xs mt-1 font-data" style={{ color: statValues.escalated > 0 ? 'var(--accent-red)' : 'var(--text-secondary-2)' }}>
+              {statValues.escalated} escalated
+            </p>
+          </div>
+
+          {/* Col 3 — Escalated Windows */}
+          <div className="px-6">
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary-2)' }}>Escalated Windows</p>
+            <p className="text-3xl font-extrabold font-data leading-tight" style={{ color: totalWindows > 0 ? 'var(--accent-amber)' : 'var(--text-primary)' }}>{totalWindows}</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary-2)' }}>across all risk tiers</p>
+          </div>
+
+          {/* Col 4 — Action buttons */}
+          <div className="px-6 flex flex-col gap-2 justify-center">
+            {statValues.pendingApprovals > 0 && (
+              <Link
+                to="/approvals"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold font-heading transition hover:opacity-90"
+                style={{ backgroundColor: 'var(--accent-red)', color: '#fff' }}
+              >
+                Review {statValues.pendingApprovals} Approval{statValues.pendingApprovals === 1 ? '' : 's'}
+              </Link>
+            )}
+            <Link
+              to="/agent"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold font-heading transition"
+              style={{ backgroundColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+            >
+              Run Orchestrator
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 3 — Alert / all-clear banner */}
       {topApproval ? (
-        <div className="panel p-4 flex items-center justify-between gap-4 flex-wrap" style={{ borderLeft: '4px solid var(--accent-red)' }}>
+        <div className="panel p-4 flex items-center justify-between gap-4 flex-wrap mb-5" style={{ borderLeft: '4px solid var(--accent-red)' }}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in oklab, var(--accent-red) 15%, transparent)' }}>
               <AlertTriangle className="w-4.5 h-4.5" style={{ color: 'var(--accent-red)' }} />
@@ -140,26 +197,51 @@ export default function Overview() {
           </div>
           <Link to="/approvals" className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold font-heading shrink-0"
             style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-page)' }}>
-            Review <ArrowUpRight className="w-4 h-4" />
+            Review &rarr;
           </Link>
         </div>
       ) : (
-        <div className="panel p-4 flex items-center gap-3">
+        <div className="panel p-4 flex items-center gap-3 mb-5">
           <CheckCircle2 className="w-5 h-5" style={{ color: 'var(--accent-emerald)' }} />
           <p className="text-sm font-heading text-[var(--text-secondary-2)]">No shipments need attention right now.</p>
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard icon={Boxes} label="Fleet Status" value={statValues.shipments} accent="cyan" delay={0}
-          delta={{ text: `${statValues.escalated} escalated · ${statValues.monitored} monitored`, tone: statValues.escalated > 0 ? 'warn' : 'ok' }} />
-        <StatCard icon={AlertTriangle} label="Critical Alerts" value={String(statValues.critical).padStart(3, '0')} accent="red" delay={60} />
-        <StatCard icon={DollarSign} label="Value at Risk" value={statValues.valueAtRisk} accent="amber" delay={120}
-          delta={{ text: `across ${statValues.escalated} escalated shipment${statValues.escalated === 1 ? '' : 's'}`, tone: 'neutral' }} />
-        <StatCard icon={ClipboardCheck} label="Pending Approvals" value={statValues.pendingApprovals} accent="cyan" delay={180} />
+      {/* Section 4 — KPI cards */}
+      <div className="grid grid-cols-4 gap-4 mb-5">
+        <KpiCard
+          icon={Boxes}
+          variant="blue"
+          value={statValues.shipments}
+          label="Active Shipments"
+          trend={statValues.escalated > 0 ? `${statValues.escalated} escalated` : undefined}
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          variant="purple"
+          value={String(statValues.critical).padStart(3, '0')}
+          label="Critical Alerts"
+          trend={statValues.critical > 0 ? `${statValues.critical} active` : undefined}
+        />
+        <KpiCard
+          icon={DollarSign}
+          variant="amber"
+          value={statValues.valueAtRisk}
+          label="Value at Risk"
+        />
+        <KpiCard
+          icon={ClipboardCheck}
+          variant="teal"
+          value={statValues.pendingApprovals}
+          label="Pending Approvals"
+          trend={statValues.pendingApprovals > 0 ? `${statValues.pendingApprovals} pending` : undefined}
+        />
       </div>
 
-      <div className="grid gap-4 animate-slide-up" style={{ gridTemplateColumns: '1fr 2.4fr 1fr', animationDelay: '480ms' }}>
+      {/* Section 5 — Three-column row */}
+      <div className="grid gap-4 mb-5" style={{ gridTemplateColumns: '1fr 2.4fr 1fr' }}>
+
+        {/* Left — Tier Distribution */}
         <div className="panel p-4">
           <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)] mb-1">Tier Distribution</h2>
           <p className="text-[11px] text-[var(--text-secondary-2)] mb-3">Escalated windows only</p>
@@ -186,6 +268,7 @@ export default function Overview() {
           </div>
         </div>
 
+        {/* Center — ColdChainPulse */}
         <ColdChainPulse
           shipmentId={topShipmentId}
           windows={pulseWindows}
@@ -194,10 +277,11 @@ export default function Overview() {
           valueAtRisk={topShipment?.value_at_risk_usd}
         />
 
+        {/* Right — Live Agent Activity */}
         <div className="panel p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
-            <Link to="/agent" className="text-xs font-heading text-[var(--accent-cyan)] hover:underline">View all &rarr;</Link>
+            <Link to="/agent" className="text-xs font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all &rarr;</Link>
           </div>
           {recentActions.length === 0 ? (
             <EmptyState icon={Bot} title="No agent activity yet"
@@ -208,9 +292,9 @@ export default function Overview() {
                 const headline = getAgentHeadline(item.action.tool, item.action);
                 return (
                   <div key={i} className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-white/[0.02] transition">
-                    <AgentChip toolId={item.action.tool} size="sm" />
-                    <span className="text-xs text-[var(--text-secondary-2)] truncate flex-1">{headline.title}</span>
-                    <span className="text-[10px] font-data text-[var(--text-secondary-2)] shrink-0">{timeAgo(item.timestamp)}</span>
+                    <AgentChip toolId={item.action.tool} size="sm" labelClassName="hidden" />
+                    <span className="text-xs truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>{headline.title}</span>
+                    <span className="text-[10px] font-data shrink-0" style={{ color: 'var(--text-secondary-2)' }}>{timeAgo(item.timestamp)}</span>
                   </div>
                 );
               })}
@@ -219,7 +303,8 @@ export default function Overview() {
         </div>
       </div>
 
-      <div className="panel p-6 animate-slide-up" style={{ animationDelay: '720ms' }}>
+      {/* Section 6 — Shipment Risk Table */}
+      <div className="panel p-6">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div>
             <h2 className="text-sm font-semibold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
@@ -305,6 +390,7 @@ export default function Overview() {
           </table>
         </div>
       </div>
+
     </div>
   );
 }
