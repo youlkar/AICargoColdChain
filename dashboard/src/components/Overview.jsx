@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { useApi } from '../hooks/useApi';
 import { Link, useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { AlertTriangle, Thermometer, Activity, ClipboardCheck, ArrowUpRight, CheckCircle2, Search, Bot, ShieldCheck, ChevronRight, DollarSign, Boxes } from 'lucide-react';
+import { AlertTriangle, Thermometer, Activity, ClipboardCheck, CheckCircle2, Search, Bot, ShieldCheck, ChevronRight, DollarSign, Boxes } from 'lucide-react';
 import TierBadge from './TierBadge';
 import { TIER_COLORS, TIER_ORDER } from '../lib/colors';
-import StatCard from './shared/StatCard';
 import ColdChainPulse from './shared/ColdChainPulse';
 import { StatCardSkeleton, ChartSkeleton, ErrorState, EmptyState } from './shared/States';
 import AgentChip from './shared/AgentChip';
@@ -102,7 +101,7 @@ export default function Overview() {
     <div className="p-6 max-w-7xl mx-auto space-y-5">
 
       {/* Section 1 — Page header */}
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+      <div className="flex items-center justify-between flex-wrap gap-3 ">
         <div>
           <h1 className="text-2xl font-bold font-heading" style={{ color: 'var(--text-primary)' }}>Cold-Chain Overview</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>
@@ -130,7 +129,7 @@ export default function Overview() {
 
       {/* Section 2 — Hero banner */}
       <div
-        className="panel p-5 mb-5"
+        className="panel p-5 "
         style={{ background: 'color-mix(in oklab, var(--accent-cyan) 4%, var(--card-bg))' }}
       >
         <div className="grid grid-cols-4 divide-x divide-[var(--card-border)]">
@@ -181,7 +180,7 @@ export default function Overview() {
 
       {/* Section 3 — Alert / all-clear banner */}
       {topApproval ? (
-        <div className="panel p-4 flex items-center justify-between gap-4 flex-wrap mb-5" style={{ borderLeft: '4px solid var(--accent-red)' }}>
+        <div className="panel p-4 flex items-center justify-between gap-4 flex-wrap " style={{ borderLeft: '4px solid var(--accent-red)' }}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in oklab, var(--accent-red) 15%, transparent)' }}>
               <AlertTriangle className="w-4.5 h-4.5" style={{ color: 'var(--accent-red)' }} />
@@ -201,14 +200,14 @@ export default function Overview() {
           </Link>
         </div>
       ) : (
-        <div className="panel p-4 flex items-center gap-3 mb-5">
+        <div className="panel p-4 flex items-center gap-3 ">
           <CheckCircle2 className="w-5 h-5" style={{ color: 'var(--accent-emerald)' }} />
           <p className="text-sm font-heading text-[var(--text-secondary-2)]">No shipments need attention right now.</p>
         </div>
       )}
 
       {/* Section 4 — KPI cards */}
-      <div className="grid grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-4 gap-4 ">
         <KpiCard
           icon={Boxes}
           variant="blue"
@@ -239,7 +238,7 @@ export default function Overview() {
       </div>
 
       {/* Section 5 — Three-column row */}
-      <div className="grid gap-4 mb-5" style={{ gridTemplateColumns: '1fr 2.4fr 1fr' }}>
+      <div className="grid gap-4 " style={{ gridTemplateColumns: '1fr 2.4fr 1fr' }}>
 
         {/* Left — Tier Distribution */}
         <div className="panel p-4">
