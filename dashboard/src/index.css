@@ -25,6 +25,13 @@
   --accent-red: #f87171;
   --accent-amber: #fbbf24;
   --accent-emerald: #34d399;
+  /* KPI gradient card tokens */
+  --kpi-blue-start:   #1e3a8a;
+  --kpi-blue-end:     #1d4ed8;
+  --kpi-purple-start: #3b1c8c;
+  --kpi-purple-end:   #7c3aed;
+  --kpi-teal-start:   #0f4c4c;
+  --kpi-teal-end:     #0d9488;
   --font-heading: 'Sora', system-ui, -apple-system, sans-serif;
   --font-data: 'Roboto Mono', 'SF Mono', monospace;
 }
@@ -154,6 +161,13 @@ html.light {
   --accent-red: #dc2626;
   --accent-amber: #b45309;
   --accent-emerald: #059669;
+  /* KPI gradient card tokens — light (slightly deeper for contrast) */
+  --kpi-blue-start:   #1e40af;
+  --kpi-blue-end:     #2563eb;
+  --kpi-purple-start: #5b21b6;
+  --kpi-purple-end:   #7c3aed;
+  --kpi-teal-start:   #134e4a;
+  --kpi-teal-end:     #0f766e;
 }
 
 html.light body { background: var(--bg-base); color: var(--text-primary); }

@@ -1,38 +1,23 @@
 const TIERS = {
-  CRITICAL: {
-    bg: 'bg-red-500/15',
-    text: 'text-red-400',
-    ring: 'ring-red-500/30',
-    dot: 'bg-red-500',
-  },
-  HIGH: {
-    bg: 'bg-orange-500/15',
-    text: 'text-orange-400',
-    ring: 'ring-orange-500/30',
-    dot: 'bg-orange-500',
-  },
-  MEDIUM: {
-    bg: 'bg-yellow-500/15',
-    text: 'text-yellow-400',
-    ring: 'ring-yellow-500/30',
-    dot: 'bg-yellow-500',
-  },
-  LOW: {
-    bg: 'bg-emerald-500/15',
-    text: 'text-emerald-400',
-    ring: 'ring-emerald-500/30',
-    dot: 'bg-emerald-500',
-  },
+  CRITICAL: { bg: 'rgba(239,68,68,0.12)',  text: '#f87171', dot: '#ef4444' },
+  HIGH:     { bg: 'rgba(249,115,22,0.12)', text: '#fb923c', dot: '#f97316' },
+  MEDIUM:   { bg: 'rgba(234,179,8,0.12)',  text: '#fde047', dot: '#eab308' },
+  LOW:      { bg: 'rgba(34,197,94,0.12)',  text: '#4ade80', dot: '#22c55e' },
 };
 
 export default function TierBadge({ tier, size = 'sm' }) {
   const s = TIERS[tier] || TIERS.LOW;
-  const sizeClasses = size === 'lg'
-    ? 'px-3 py-1 text-xs'
-    : 'px-2 py-0.5 text-[11px]';
+  const pad = size === 'lg' ? '3px 10px' : '3px 8px';
+  const fontSize = size === 'lg' ? '12px' : '10.5px';
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full font-semibold ring-1 ring-inset ${s.bg} ${s.text} ${s.ring} ${sizeClasses}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot} ${tier === 'CRITICAL' ? 'animate-pulse' : ''}`} />
+    <span
+      className="inline-flex items-center gap-[5px] rounded-md font-bold select-none"
+      style={{ background: s.bg, color: s.text, padding: pad, fontSize }}
+    >
+      <span
+        className={tier === 'CRITICAL' ? 'animate-pulse' : ''}
+        style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0, display: 'inline-block' }}
+      />
       {tier}
     </span>
   );
