@@ -34,45 +34,107 @@ const RUN_STATUS_CLS = {
   info: 'bg-slate-500/10 text-slate-400',
 };
 
-function RunCard({ run }) {
+// Best-effort one-line summary of a tool's result, checking known fields in
+// priority order so the audit trail shows something useful without needing
+// per-agent-type rendering branches.
+function summarizeToolResult(result) {
+  if (!result || typeof result !== 'object') return null;
+  const r = result;
+  if (r.compliance_status) return `${r.compliance_status}${r.product_disposition ? ` → ${r.product_disposition}` : ''}`;
+  if (r.selected_route || r.recommended_route) return r.selected_route || r.recommended_route;
+  if (r.recommended_facility || r.facility_name) return r.recommended_facility || r.facility_name;
+  if (r.estimated_loss_usd != null) return `$${Number(r.estimated_loss_usd).toLocaleString()} estimated loss`;
+  if (r.estimated_loss != null) return `$${Number(r.estimated_loss).toLocaleString()} estimated loss`;
+  if (r.status) return r.status;
+  return null;
+}
+
+function RunCard({ run, expanded, onToggle }) {
   const windowId = run.window_id || run._window_id;
   const level = runStatusSemantic(run);
-  const uniqueTools = [...new Set((run.actions_taken || []).map(a => a?.tool).filter(Boolean))];
+  const actions = run.actions_taken || [];
+  const uniqueTools = [...new Set(actions.map(a => a?.tool).filter(Boolean))];
   const runKey = getRunKey(run);
+  const findings = (run.guardrail_findings || []).filter(f => f && f.passed === false);
 
   return (
-    <div className="glass-card-sm overflow-hidden animate-fade-in px-5 py-3 flex items-center gap-3">
-      <TierBadge tier={run.risk_tier} />
-      <span className="font-mono text-xs font-semibold text-white">{windowId}</span>
-      <span className="text-[11px] text-slate-500">{run.shipment_id}{run.container_id ? ` / ${run.container_id}` : ''}</span>
+    <div className="glass-card-sm overflow-hidden animate-fade-in">
+      <div className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-white/[0.02] transition" onClick={onToggle}>
+        <TierBadge tier={run.risk_tier} />
+        <span className="font-mono text-xs font-semibold text-white">{windowId}</span>
+        <span className="text-[11px] text-slate-500">{run.shipment_id}{run.container_id ? ` / ${run.container_id}` : ''}</span>
 
-      <div className="flex flex-wrap gap-[3px]">
-        {uniqueTools.slice(0, 5).map(t => {
-          const meta = getAgentMeta(t);
-          return (
-            <span key={t} className={`px-[7px] py-[2px] rounded-full text-[10px] font-bold border ${meta.color.bg} ${meta.color.text} ${meta.color.border}`}>
-              {meta.name}
-            </span>
-          );
-        })}
-        {uniqueTools.length > 5 && (
-          <span className="text-[10px] text-slate-500 self-center">+{uniqueTools.length - 5}</span>
-        )}
+        <div className="flex flex-wrap gap-[3px]">
+          {uniqueTools.slice(0, 5).map(t => {
+            const meta = getAgentMeta(t);
+            return (
+              <span key={t} className={`px-[7px] py-[2px] rounded-full text-[10px] font-bold border ${meta.color.bg} ${meta.color.text} ${meta.color.border}`}>
+                {meta.name}
+              </span>
+            );
+          })}
+          {uniqueTools.length > 5 && (
+            <span className="text-[10px] text-slate-500 self-center">+{uniqueTools.length - 5}</span>
+          )}
+        </div>
+
+        <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-[10px] py-[3px] rounded-md ml-2 ${RUN_STATUS_CLS[level]}`}>
+          {level === 'ok' ? <CheckCircle className="w-[10px] h-[10px]" /> : <Clock className="w-[10px] h-[10px]" />}
+          {RUN_STATUS_LABEL[level]}
+        </span>
+        {findings.length > 0 && <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+
+        <span className="text-[10px] text-slate-600 ml-auto shrink-0">{timeAgo(run.timestamp)}</span>
+        {expanded ? <ChevronUp className="w-4 h-4 text-slate-600" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
       </div>
 
-      <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-[10px] py-[3px] rounded-md ml-2 ${RUN_STATUS_CLS[level]}`}>
-        {level === 'ok' ? <CheckCircle className="w-[10px] h-[10px]" /> : <Clock className="w-[10px] h-[10px]" />}
-        {RUN_STATUS_LABEL[level]}
-      </span>
+      {expanded && (
+        <div className="px-5 pb-4 border-t border-white/[0.06] pt-3 grid grid-cols-4 gap-4 text-xs animate-fade-in">
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Scores</p>
+            <p className="text-slate-400">Fused: <span className="font-mono text-white">{run.fused_risk_score?.toFixed(4) ?? '—'}</span></p>
+            <p className="text-slate-400">ML Spoilage: <span className="font-mono text-emerald-400">{run.ml_spoilage_probability?.toFixed(4) ?? '—'}</span></p>
+            <p className="text-slate-400">Confidence: <span className="font-mono text-cyan-400">{run.confidence?.toFixed(2) ?? '—'}</span></p>
+            {run.replan_count > 0 && <p className="text-amber-400 mt-1">{run.replan_count} replan(s)</p>}
+          </div>
 
-      <span className="text-[10px] text-slate-600 ml-auto shrink-0">{timeAgo(run.timestamp)}</span>
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Key Drivers</p>
+            {run.key_drivers?.length > 0
+              ? run.key_drivers.slice(0, 4).map((k, j) => <p key={j} className="text-orange-400/80">{typeof k === 'string' ? k : JSON.stringify(k)}</p>)
+              : <p className="text-slate-600">none</p>}
+          </div>
 
-      <Link
-        to={`/agent-v2/runs/${encodeURIComponent(runKey)}`}
-        className="flex items-center gap-1 text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 transition shrink-0"
-      >
-        View run <ArrowRight className="w-3 h-3" />
-      </Link>
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Agent Results</p>
+            {actions.length > 0 ? actions.map((a, j) => {
+              const summary = summarizeToolResult(a.result);
+              return (
+                <p key={j} className="text-slate-400 truncate">
+                  <span className="text-cyan-400/90">{getAgentMeta(a.tool).name}</span>
+                  {summary ? <>: <span className="text-white">{summary}</span></> : null}
+                </p>
+              );
+            }) : <p className="text-slate-600">none</p>}
+            {findings.length > 0 && (
+              <p className="text-red-400 font-semibold mt-1">{findings.length} guardrail finding(s)</p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Decision</p>
+            <p className="text-slate-400 line-clamp-4">{run.decision_summary || run.llm_reasoning || run.approval_reason || '—'}</p>
+            {run.requires_approval && <p className="text-amber-400 font-semibold mt-1">Requires approval</p>}
+            <Link
+              to={`/agent-v2/runs/${encodeURIComponent(runKey)}`}
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1 text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 transition mt-2"
+            >
+              Full run details <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -227,7 +289,7 @@ export default function AuditLog() {
         <div className="space-y-2">
           {data.map((run, i) => (
             <div key={getRunKey(run)} style={{ animationDelay: `${Math.min(i * 15, 500)}ms` }}>
-              <RunCard run={run} />
+              <RunCard run={run} expanded={expanded === i} onToggle={() => setExpanded(expanded === i ? null : i)} />
             </div>
           ))}
         </div>
