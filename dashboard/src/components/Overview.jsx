@@ -259,11 +259,11 @@ export default function Overview() {
 
         {/* Left — Tier Distribution */}
         <div className="panel overflow-hidden">
-          <div className="px-4 py-3.5 border-b border-[var(--card-border)]">
+          <div className="px-[18px] pt-[14px] pb-[12px]" style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
             <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Tier Distribution</h2>
             <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Escalated windows only</p>
           </div>
-          <div className="px-4 py-3">
+          <div className="px-[18px] py-3">
             <ResponsiveContainer width="100%" height={160}>
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
@@ -303,14 +303,15 @@ export default function Overview() {
 
         {/* Right — Live Agent Activity */}
         <div className="panel overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--card-border)]">
+          <div className="flex items-center justify-between px-[18px] pt-[14px] pb-[12px]"
+            style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
             <div>
               <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
               <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Last 6 actions</p>
             </div>
             <Link to="/agent" className="text-[11px] font-semibold font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all →</Link>
           </div>
-          <div className="px-4 py-2">
+          <div className="px-[18px] py-2">
             {recentActions.length === 0 ? (
               <EmptyState icon={Bot} title="No agent activity yet"
                 description="Run the orchestrator from the Agent Activity page to see actions here." />
@@ -320,7 +321,8 @@ export default function Overview() {
                   const headline = getAgentHeadline(item.action.tool, item.action);
                   const chip = AGENT_FEED_CHIPS[item.action.tool] || AGENT_FEED_CHIPS._default;
                   return (
-                    <div key={i} className="flex items-center gap-2 py-[7px] border-b border-[var(--card-border)] last:border-0">
+                    <div key={i} className="flex items-center gap-2 py-[8px]"
+                      style={i < recentActions.slice(0,6).length - 1 ? { borderBottom: '1px solid rgba(148,163,184,0.06)' } : {}}>
                       <span className="shrink-0 rounded-md px-[7px] py-[3px] text-[10px] font-bold tracking-wide"
                         style={{ background: chip.bg, color: chip.color }}>{chip.label}</span>
                       <span className="text-[11.5px] truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>{headline.title}</span>
@@ -336,7 +338,8 @@ export default function Overview() {
 
       {/* Section 6 — Shipment Risk Table */}
       <div className="panel overflow-hidden">
-        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-4 border-b border-[var(--card-border)]">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-4"
+          style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
           <div>
             <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
             <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Click a row for shipment details</p>
@@ -362,8 +365,8 @@ export default function Overview() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--card-border)] text-left text-[11px] text-[var(--text-secondary-2)] uppercase tracking-wider font-heading"
-                style={{ background: 'rgba(148,163,184,0.02)' }}>
+              <tr className="text-left text-[11px] text-[var(--text-secondary-2)] uppercase tracking-wider font-heading"
+                style={{ background: 'rgba(148,163,184,0.02)', borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
                 <th className="px-3.5 py-2.5 font-medium first:pl-5">Shipment</th>
                 <th className="px-3.5 py-2.5 font-medium">Containers</th>
                 <th className="px-3.5 py-2.5 font-medium">Products</th>
@@ -383,7 +386,8 @@ export default function Overview() {
               ) : filteredShipments.slice(0, 10).map((s, i) => (
                 <tr key={s.shipment_id}
                     onClick={() => navigate(`/shipments/${s.shipment_id}`)}
-                    className="border-b border-[var(--card-border)] hover:bg-white/[0.03] transition animate-fade-in cursor-pointer"
+                    className="hover:bg-white/[0.03] transition animate-fade-in cursor-pointer"
+                    style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
                     style={{ animationDelay: `${760 + i * 40}ms` }}>
                   <td className="py-2.5 px-3.5 first:pl-5">
                     <span className="font-medium font-data flex items-center gap-1.5" style={{ color: 'var(--accent-cyan)' }}>
