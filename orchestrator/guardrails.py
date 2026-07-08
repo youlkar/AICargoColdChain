@@ -343,3 +343,79 @@ def redact_pii(text: str) -> Tuple[str, bool]:
     redacted = _EMAIL_RE.sub("[REDACTED]", redacted)
     redacted = _PHONE_RE.sub("[REDACTED]", redacted)
     return redacted, redacted != text
+
+
+# Azure AI Content Safety (additive, non-blocking)
+#
+# Supplements the regex-based check_prompt_injection above with an actual
+# moderation model. No-ops (returns []) if AZURE_CONTENT_SAFETY_ENDPOINT/KEY
+# aren't set, or if the API call fails for any reason — this check must
+# never be able to break a request, only flag it.
+
+CARGO_CONTENT_SAFETY_SEVERITY_THRESHOLD = int(
+    os.environ.get("CARGO_CONTENT_SAFETY_SEVERITY_THRESHOLD", "2")
+)
+
+_content_safety_client = None
+_content_safety_init_attempted = False
+
+
+def _get_content_safety_client():
+    global _content_safety_client, _content_safety_init_attempted
+    if _content_safety_init_attempted:
+        return _content_safety_client
+    _content_safety_init_attempted = True
+
+    endpoint = os.environ.get("AZURE_CONTENT_SAFETY_ENDPOINT")
+    key = os.environ.get("AZURE_CONTENT_SAFETY_KEY")
+    if not endpoint or not key:
+        return None
+
+    try:
+        from azure.ai.contentsafety import ContentSafetyClient
+        from azure.core.credentials import AzureKeyCredential
+
+        _content_safety_client = ContentSafetyClient(endpoint, AzureKeyCredential(key))
+    except Exception as exc:
+        logger.warning("Content Safety client init failed: %s — check disabled", exc)
+        _content_safety_client = None
+    return _content_safety_client
+
+
+def check_content_safety(text: str, agent: Optional[str] = None) -> List[GuardrailFinding]:
+    # Analyze `text` with Azure AI Content Safety. Returns [] if unconfigured,
+    # unreachable, or nothing flagged — never raises, never blocks.
+    if not text or not text.strip():
+        return []
+
+    client = _get_content_safety_client()
+    if client is None:
+        return []
+
+    try:
+        from azure.ai.contentsafety.models import AnalyzeTextOptions
+
+        response = client.analyze_text(AnalyzeTextOptions(text=text))
+    except Exception as exc:
+        logger.warning("Content Safety analyze_text failed: %s — skipping check", exc)
+        return []
+
+    flagged = [
+        cat for cat in (response.categories_analysis or [])
+        if (cat.severity or 0) >= CARGO_CONTENT_SAFETY_SEVERITY_THRESHOLD
+    ]
+    if not flagged:
+        return []
+
+    details = {cat.category: cat.severity for cat in flagged}
+    return [_finding(
+        check="content_safety",
+        severity="warning",
+        passed=False,
+        agent=agent,
+        message=(
+            f"Azure Content Safety flagged text (categories: "
+            f"{', '.join(f'{k}={v}' for k, v in details.items())})"
+        ),
+        details={"categories": details, "text_preview": text[:200]},
+    )]

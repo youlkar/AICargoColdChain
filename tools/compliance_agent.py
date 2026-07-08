@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from orchestrator.guardrails import _finding, check_prompt_injection
+from orchestrator.guardrails import _finding, check_content_safety, check_prompt_injection
 
 load_dotenv()
 
@@ -420,9 +420,12 @@ def _execute(
     # Run RAG compliance validation (vector search + LLM)
 
     guardrail_finding = None
+    content_safety_findings: List[Dict[str, Any]] = []
     clean_details = {k: v for k, v in (details or {}).items()}
     for field_name, field_val in (details or {}).items():
-        if isinstance(field_val, str) and check_prompt_injection(field_val):
+        if not isinstance(field_val, str):
+            continue
+        if check_prompt_injection(field_val):
             logger.warning("GUARDRAIL  compliance_agent: injection pattern in details.%s", field_name)
             clean_details[field_name] = "[BLOCKED]"
             guardrail_finding = _finding(
@@ -433,6 +436,7 @@ def _execute(
                 message=f"Prompt injection pattern detected in details.{field_name}; field blocked.",
                 details={"field": field_name},
             )
+        content_safety_findings.extend(check_content_safety(field_val, agent="compliance_agent"))
     details = clean_details
 
     # AUDIT LOG
@@ -509,6 +513,8 @@ def _execute(
 
     if guardrail_finding is not None:
         result["guardrail_finding"] = guardrail_finding
+    if content_safety_findings:
+        result["guardrail_findings"] = content_safety_findings
 
     return result
 

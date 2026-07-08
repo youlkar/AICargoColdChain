@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTheme } from '../lib/ThemeContext';
 import { useApi } from '../hooks/useApi';
 import { Link, useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -14,14 +15,16 @@ import KpiCard from './shared/KpiCard';
 
 // Short display labels for agent feed chips — matching mockup aesthetic
 const AGENT_FEED_CHIPS = {
-  triage_agent:       { label: 'RISK',       bg: 'rgba(239,68,68,0.12)',   color: '#f87171' },
-  compliance_agent:   { label: 'COMPLIANCE', bg: 'rgba(139,92,246,0.12)',  color: '#a78bfa' },
-  notification_agent: { label: 'NOTIFY',     bg: 'rgba(34,211,238,0.12)',  color: '#22d3ee' },
-  approval_workflow:  { label: 'ESCALATION', bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24' },
-  cold_storage_agent: { label: 'STORAGE',    bg: 'rgba(56,189,248,0.12)',  color: '#38bdf8' },
-  route_agent:        { label: 'ROUTE',      bg: 'rgba(34,211,238,0.12)',  color: '#22d3ee' },
-  insurance_agent:    { label: 'INSURE',     bg: 'rgba(52,211,153,0.12)',  color: '#34d399' },
-  _default:           { label: 'AGENT',      bg: 'rgba(148,163,184,0.10)', color: '#94a3b8' },
+  triage_agent:       { label: 'RISK',       bg: 'rgba(239,68,68,0.15)',   color: '#f87171' },
+  risk_agent:         { label: 'RISK',       bg: 'rgba(239,68,68,0.15)',   color: '#f87171' },
+  compliance_agent:   { label: 'COMPLIANCE', bg: 'rgba(139,92,246,0.15)',  color: '#a78bfa' },
+  notification_agent: { label: 'NOTIFY',     bg: 'rgba(34,211,238,0.15)',  color: '#22d3ee' },
+  approval_workflow:  { label: 'ESCALATION', bg: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
+  cold_storage_agent: { label: 'STORAGE',    bg: 'rgba(56,189,248,0.15)',  color: '#38bdf8' },
+  scheduling_agent:   { label: 'SCHEDULE',   bg: 'rgba(99,102,241,0.15)',  color: '#818cf8' },
+  route_agent:        { label: 'ROUTE',      bg: 'rgba(34,211,238,0.15)',  color: '#22d3ee' },
+  insurance_agent:    { label: 'INSURE',     bg: 'rgba(52,211,153,0.15)',  color: '#34d399' },
+  _default:           { label: 'AGENT',      bg: 'rgba(148,163,184,0.12)', color: '#94a3b8' },
 };
 
 function CustomTooltip({ active, payload }) {
@@ -39,6 +42,8 @@ function CustomTooltip({ active, payload }) {
 
 export default function Overview() {
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const [rangeHours, setRangeHours] = useState(24);
   const { data, loading, error, refetch } = useApi(
     `/risk/overview${rangeHours ? `?hours=${rangeHours}` : ''}`, [rangeHours]
@@ -85,7 +90,7 @@ export default function Overview() {
   const recentActions = (history || [])
     .filter(d => !cutoff || new Date(d.timestamp || 0).getTime() >= cutoff)
     .flatMap(d => (Array.isArray(d.actions_taken) ? d.actions_taken : [])
-      .filter(a => a && typeof a === 'object' && a.tool !== 'approval_workflow')
+      .filter(a => a && typeof a === 'object')
       .map(a => ({ action: a, timestamp: d.timestamp, windowId: d.window_id || d._window_id, shipmentId: d.shipment_id })))
     .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
     .slice(0, 6);
@@ -141,36 +146,53 @@ export default function Overview() {
       {/* Section 2 — Hero banner */}
       <div
         className="relative overflow-hidden rounded-2xl p-5"
-        style={{
+        style={isLight ? {
+          background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 60%, #f0fdf4 100%)',
+          border: '1px solid rgba(14,116,144,0.18)',
+        } : {
           background: 'linear-gradient(135deg, #0e3a4f 0%, #0a2d3d 50%, #0d1f35 100%)',
           border: '1px solid rgba(34,211,238,0.15)',
         }}
       >
         {/* glow blob */}
         <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.08) 0%, transparent 70%)' }} />
-        <div className="grid grid-cols-4 divide-x divide-[rgba(34,211,238,0.10)]">
+          style={{ background: isLight
+            ? 'radial-gradient(circle, rgba(14,116,144,0.06) 0%, transparent 70%)'
+            : 'radial-gradient(circle, rgba(34,211,238,0.08) 0%, transparent 70%)' }} />
+        <div className="grid grid-cols-4"
+          style={{ borderColor: isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)' }}>
           {/* Col 1 — Fleet Size */}
-          <div className="px-6 first:pl-0">
-            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Fleet Size</p>
-            <p className="text-[28px] font-extrabold font-data leading-tight text-white">{statValues.shipments}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(148,163,184,0.6)' }}>Active shipments in transit</p>
+          <div className="px-6 first:pl-0" style={{ borderRight: `1px solid ${isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)'}` }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.7)' }}>Fleet Size</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight"
+              style={{ color: isLight ? '#0f172a' : '#ffffff' }}>{statValues.shipments}</p>
+            <p className="text-xs mt-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.6)' }}>Active shipments in transit</p>
           </div>
 
           {/* Col 2 — Value at Risk */}
-          <div className="px-6">
-            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Value at Risk</p>
-            <p className="text-[28px] font-extrabold font-data leading-tight text-white">{statValues.valueAtRisk}</p>
-            <p className="text-xs mt-1 font-data" style={{ color: statValues.escalated > 0 ? '#fca5a5' : 'rgba(148,163,184,0.6)' }}>
+          <div className="px-6" style={{ borderRight: `1px solid ${isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)'}` }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.7)' }}>Value at Risk</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight"
+              style={{ color: isLight ? '#0f172a' : '#ffffff' }}>{statValues.valueAtRisk}</p>
+            <p className="text-xs mt-1 font-data"
+              style={{ color: statValues.escalated > 0 ? (isLight ? '#dc2626' : '#fca5a5') : (isLight ? '#64748b' : 'rgba(148,163,184,0.6)') }}>
               {statValues.escalated} escalated
             </p>
           </div>
 
           {/* Col 3 — Escalated Windows */}
-          <div className="px-6">
-            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Escalated Windows</p>
-            <p className="text-[28px] font-extrabold font-data leading-tight" style={{ color: totalWindows > 0 ? '#fbbf24' : 'white' }}>{totalWindows}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(148,163,184,0.6)' }}>across all risk tiers</p>
+          <div className="px-6" style={{ borderRight: `1px solid ${isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)'}` }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.7)' }}>Escalated Windows</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight"
+              style={{ color: totalWindows > 0 ? (isLight ? '#b45309' : '#fbbf24') : (isLight ? '#0f172a' : 'rgba(255,255,255,0.9)') }}>
+              {totalWindows}
+            </p>
+            <p className="text-xs mt-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.6)' }}>across all risk tiers</p>
           </div>
 
           {/* Col 4 — Action buttons */}
@@ -187,7 +209,7 @@ export default function Overview() {
             <Link
               to="/agent"
               className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold font-heading transition hover:opacity-90"
-              style={{ backgroundColor: 'var(--accent-cyan)', color: '#0b1120' }}
+              style={{ backgroundColor: isLight ? '#0e7490' : 'var(--accent-cyan)', color: '#ffffff' }}
             >
               Run Orchestrator
             </Link>
@@ -311,26 +333,34 @@ export default function Overview() {
             </div>
             <Link to="/agent" className="text-[11px] font-semibold font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all →</Link>
           </div>
-          <div className="px-[18px] py-2">
+          <div className="px-[18px]">
             {recentActions.length === 0 ? (
-              <EmptyState icon={Bot} title="No agent activity yet"
-                description="Run the orchestrator from the Agent Activity page to see actions here." />
-            ) : (
-              <div>
-                {recentActions.slice(0, 6).map((item, i) => {
-                  const headline = getAgentHeadline(item.action.tool, item.action);
-                  const chip = AGENT_FEED_CHIPS[item.action.tool] || AGENT_FEED_CHIPS._default;
-                  return (
-                    <div key={i} className="flex items-center gap-2 py-[8px]"
-                      style={i < recentActions.slice(0,6).length - 1 ? { borderBottom: '1px solid rgba(148,163,184,0.06)' } : {}}>
-                      <span className="shrink-0 rounded-md px-[7px] py-[3px] text-[10px] font-bold tracking-wide"
-                        style={{ background: chip.bg, color: chip.color }}>{chip.label}</span>
-                      <span className="text-[11.5px] truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>{headline.title}</span>
-                      <span className="text-[10px] font-data shrink-0" style={{ color: 'rgba(148,163,184,0.35)' }}>{timeAgo(item.timestamp)}</span>
-                    </div>
-                  );
-                })}
+              <div className="flex items-center gap-2 py-6">
+                <Bot className="w-4 h-4 shrink-0" style={{ color: 'rgba(148,163,184,0.3)' }} />
+                <p className="text-[11.5px]" style={{ color: 'rgba(148,163,184,0.4)' }}>
+                  No agent runs yet — orchestrate a pipeline to see actions here.
+                </p>
               </div>
+            ) : (
+              recentActions.slice(0, 6).map((item, i, arr) => {
+                const headline = getAgentHeadline(item.action.tool, item.action);
+                const chip = AGENT_FEED_CHIPS[item.action.tool] || AGENT_FEED_CHIPS._default;
+                return (
+                  <div key={i} className="flex items-center gap-2.5 py-[8px]"
+                    style={i < arr.length - 1 ? { borderBottom: '1px solid rgba(148,163,184,0.06)' } : {}}>
+                    <span className="shrink-0 rounded-[5px] px-2 py-[3px] text-[10px] font-bold"
+                      style={{ background: chip.bg, color: chip.color, letterSpacing: '0.06em' }}>
+                      {chip.label}
+                    </span>
+                    <span className="text-[11.5px] truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>
+                      {headline.title}
+                    </span>
+                    <span className="text-[10px] font-mono shrink-0" style={{ color: 'rgba(148,163,184,0.35)' }}>
+                      {timeAgo(item.timestamp)}
+                    </span>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

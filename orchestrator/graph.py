@@ -360,7 +360,7 @@ _compiled = None
 _last_provider = None
 
 
-def get_compiled():
+async def get_compiled():
     # compiled graph with checkpointer and HITL interrupt
 
 
@@ -368,7 +368,7 @@ def get_compiled():
     current = get_provider_name()
     if _compiled is None or current != _last_provider:
         _compiled = build_orchestrator().compile(
-            checkpointer=get_checkpointer(),
+            checkpointer=await get_checkpointer(),
             interrupt_before=["human_review"],
         )
         _last_provider = current
@@ -455,7 +455,7 @@ async def run_orchestrator_async(risk_input: Dict[str, Any]) -> Dict[str, Any]:
         },
         **({"callbacks": callbacks} if callbacks else {}),
     }
-    app = get_compiled()
+    app = await get_compiled()
 
     initial: OrchestratorState = {
         "risk_input":    risk_input,
@@ -519,7 +519,7 @@ async def resume_orchestrator(
     # resume the paused graph after human review. Human decision injected directly into checkpoint
 
     config: Dict[str, Any] = {"configurable": {"thread_id": thread_id}}
-    app = get_compiled()
+    app = await get_compiled()
 
     # patch the checkpoint with the operator's decision before resuming.
     await app.aupdate_state(
@@ -559,7 +559,7 @@ async def stream_orchestration(risk_input: Dict[str, Any], send) -> Dict[str, An
         f"_{int(time.time() * 1000)}"
     )
     config: Dict[str, Any] = {"configurable": {"thread_id": thread_id}}
-    app = get_compiled()
+    app = await get_compiled()
 
     initial: OrchestratorState = {
         "risk_input": risk_input,
@@ -654,7 +654,7 @@ async def get_orchestrator_state(thread_id: str) -> Dict[str, Any]:
     # read the full checkpoint state for a thread_id.
 
     config: Dict[str, Any] = {"configurable": {"thread_id": thread_id}}
-    app = get_compiled()
+    app = await get_compiled()
     try:
         state = await app.aget_state(config)
         return dict(state.values) if state and state.values else {}

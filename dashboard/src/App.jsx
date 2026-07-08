@@ -14,6 +14,8 @@ import Approvals from './components/Approvals';
 import Monitoring from './components/Monitoring';
 import AgentActivity from './components/AgentActivity';
 import AgentRunDetail from './components/AgentRunDetail';
+import AgentActivityV2 from './components/AgentActivityV2';
+import AgentRunDetailV2 from './components/AgentRunDetailV2';
 import AgentQuality from './components/AgentQuality';
 import TopBar from './components/TopBar';
 import ThemeToggleButton from './components/ThemeToggleButton';
@@ -23,7 +25,7 @@ const NAV = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
   { to: '/monitoring', icon: Activity, label: 'Monitoring' },
   { to: '/shipments', icon: Ship, label: 'Shipments' },
-  { to: '/agent', icon: Bot, label: 'Agent Activity' },
+  { to: '/agent-v2', icon: Bot, label: 'Agent Activity' },
   { to: '/agent-quality', icon: FlaskConical, label: 'Agent Quality' },
   { to: '/audit', icon: ScrollText, label: 'Audit Log' },
   { to: '/approvals', icon: CheckCircle, label: 'Approvals', badgeKey: 'approvals' },
@@ -133,6 +135,8 @@ export default function App() {
               <Route path="/shipments/:id" element={<ShipmentDetail />} />
               <Route path="/agent" element={<AgentActivity />} />
               <Route path="/agent/runs/:runKey" element={<AgentRunDetail />} />
+              <Route path="/agent-v2" element={<AgentActivityV2 />} />
+              <Route path="/agent-v2/runs/:runKey" element={<AgentRunDetailV2 />} />
               <Route path="/agent-quality" element={<AgentQuality />} />
               <Route path="/audit" element={<AuditLog />} />
               <Route path="/approvals" element={<Approvals />} />

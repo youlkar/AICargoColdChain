@@ -900,12 +900,16 @@ def compile_output(state: OrchestratorState) -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Collect tool-level guardrail findings (e.g. prompt injection from compliance_agent)
+    # Collect tool-level guardrail findings (e.g. prompt injection, content safety from compliance_agent)
     tool_level_findings: list[GuardrailFinding] = []
     for r in tool_results + revised_results:
-        finding = (r.get("result") or {}).get("guardrail_finding")
+        result = r.get("result") or {}
+        finding = result.get("guardrail_finding")
         if finding and isinstance(finding, dict):
             tool_level_findings.append(finding)
+        extra_findings = result.get("guardrail_findings")
+        if isinstance(extra_findings, list):
+            tool_level_findings.extend(f for f in extra_findings if isinstance(f, dict))
 
     all_findings = state.get("guardrail_findings", []) + tool_level_findings
     output["guardrail_findings"] = all_findings

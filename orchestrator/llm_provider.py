@@ -83,6 +83,30 @@ def _get_tracer_callbacks() -> list:
         return []
 
 
+def _try_azure_openai():
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+    key = os.environ.get("AZURE_OPENAI_API_KEY", "")
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5-mini")
+    if not endpoint or not key:
+        return None
+    try:
+        from langchain_openai import ChatOpenAI
+        base_url = endpoint.rstrip("/") + "/openai/v1/"
+        llm = ChatOpenAI(
+            model=deployment,
+            api_key=key,
+            base_url=base_url,
+            temperature=0.1,
+            max_tokens=1024,
+            callbacks=_get_tracer_callbacks(),
+        )
+        logger.info("LLM provider: Azure OpenAI (%s) via %s", deployment, base_url)
+        return llm
+    except Exception as e:
+        logger.warning("Azure OpenAI init failed: %s", e)
+        return None
+
+
 def _try_groq():
     key = os.environ.get("GROQ_API_KEY", "")
     if not key or key == "your-key-here":
@@ -149,6 +173,7 @@ def _try_anthropic():
 
 
 _PROVIDERS = {
+    "azure_openai": _try_azure_openai,
     "groq": _try_groq,
     "ollama": _try_ollama,
     "openai": _try_openai,
@@ -198,6 +223,8 @@ def get_provider_name() -> str:
 
 
 _DEFAULT_MODEL_PRICING = {
+    "azure_openai:gpt-4o":            {"input": 2.50, "output": 10.0},
+    "azure_openai:gpt-4o-mini":       {"input": 0.15, "output": 0.60},
     "groq:llama-3.3-70b-versatile":   {"input": 0.59, "output": 0.79},
     "groq:llama-3.1-8b-instant":      {"input": 0.05, "output": 0.08},
     "ollama:qwen2.5:7b":              {"input": 0.0,  "output": 0.0},
@@ -247,6 +274,8 @@ def track_usage(node_name: str, response) -> dict:
 
 def get_model_name() -> str:
     provider = get_provider_name()
+    if provider == "azure_openai":
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
     if provider == "groq":
         return os.environ.get("CARGO_GROQ_MODEL", "llama-3.3-70b-versatile")
     if provider == "ollama":

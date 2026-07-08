@@ -5,9 +5,11 @@ Predictive ML model for 6-hour-ahead spoilage risk using XGBoost with Optuna hyp
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 import joblib
 import numpy as np
 import pandas as pd
@@ -118,6 +120,37 @@ def train_model(
 def predict(model: XGBClassifier, X: pd.DataFrame) -> np.ndarray:
     # Return spoilage probability for each window.
     return model.predict_proba(X)[:, 1]
+
+
+def predict_remote(X: pd.DataFrame, timeout: float = 5.0) -> np.ndarray:
+    """
+    Score via the Azure Container App endpoint. Raises on any failure
+    (timeout, cold-start, non-2xx) — callers must catch and fall back to
+    the local model via ``predict()``.
+    """
+    endpoint = os.environ["AZURE_ML_ENDPOINT_URL"].rstrip("/")
+    headers = {}
+    api_key = os.environ.get("AZURE_ML_ENDPOINT_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {"columns": list(X.columns), "rows": X.values.tolist()}
+    resp = httpx.post(f"{endpoint}/predict", json=payload, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    return np.array(resp.json()["scores"])
+
+
+def predict_with_fallback(model: XGBClassifier, X: pd.DataFrame) -> np.ndarray:
+    """
+    Try the remote Azure Container App endpoint first (if configured),
+    falling back to local in-process scoring on any failure.
+    """
+    if os.environ.get("AZURE_ML_ENDPOINT_URL"):
+        try:
+            return predict_remote(X)
+        except Exception as exc:
+            logger.warning("Remote scoring failed (%s) — falling back to local model", exc)
+    return predict(model, X)
 
 
 def explain(

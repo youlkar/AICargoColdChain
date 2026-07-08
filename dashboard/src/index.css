@@ -269,9 +269,34 @@ html.light .recharts-text {
   fill: #475569;
 }
 
-/* Disabled gradient buttons rely on opacity-50, which washes white text out
-   to near-invisibility against a light page background. Give disabled
-   buttons a flat neutral treatment instead. */
+/* Gradient action buttons: keep text white — their backgrounds are dark enough */
+html.light .from-violet-600.text-white,
+html.light .from-violet-500.text-white,
+html.light .from-emerald-600.text-white,
+html.light .from-emerald-500.text-white,
+html.light .from-cyan-600.text-white,
+html.light .from-blue-600.text-white,
+html.light .from-red-600.text-white,
+html.light .from-rose-600.text-white { color: #ffffff; }
+
+/* Accent-tinted badge/chip backgrounds — scale down opacity for light bg */
+html.light .bg-cyan-500\/15   { background-color: rgba(14, 116, 144, 0.10); }
+html.light .bg-cyan-500\/10   { background-color: rgba(14, 116, 144, 0.08); }
+html.light .border-cyan-500\/30 { border-color: rgba(14, 116, 144, 0.22); }
+html.light .border-cyan-500\/20 { border-color: rgba(14, 116, 144, 0.15); }
+html.light .bg-blue-500\/10   { background-color: rgba(37, 99, 235, 0.08); }
+html.light .border-blue-500\/15 { border-color: rgba(37, 99, 235, 0.15); }
+html.light .bg-violet-500\/10 { background-color: rgba(109, 40, 217, 0.08); }
+html.light .bg-amber-500\/10  { background-color: rgba(180, 83, 9, 0.08); }
+html.light .border-amber-500\/15 { border-color: rgba(180, 83, 9, 0.15); }
+html.light .bg-red-500\/10    { background-color: rgba(220, 38, 38, 0.08); }
+html.light .bg-red-500\/15    { background-color: rgba(220, 38, 38, 0.10); }
+html.light .border-red-500\/30 { border-color: rgba(220, 38, 38, 0.22); }
+html.light .bg-emerald-500\/10 { background-color: rgba(5, 150, 105, 0.08); }
+html.light .border-emerald-500\/15 { border-color: rgba(5, 150, 105, 0.15); }
+html.light .bg-emerald-500\/20 { background-color: rgba(5, 150, 105, 0.12); }
+
+/* Disabled gradient buttons: flat neutral instead of washed-out white */
 html.light button:disabled {
   opacity: 1 !important;
   background-image: none !important;
@@ -279,3 +304,6 @@ html.light button:disabled {
   color: #94a3b8 !important;
   box-shadow: none !important;
 }
+
+/* Scrollbar thumb in light mode */
+html.light .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; }

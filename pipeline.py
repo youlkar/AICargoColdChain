@@ -30,6 +30,7 @@ from src.predictive_model import (
     explain,
     load_model,
     predict,
+    predict_with_fallback,
     save_model,
     train_model,
 )
@@ -159,7 +160,7 @@ def node_ml_score(state: PipelineState) -> dict:
             X, _, _ = prepare_ml_arrays(part)
             if feat_names:
                 X = X.reindex(columns=feat_names, fill_value=0)
-            part["ml_score"] = predict(model, X)
+            part["ml_score"] = predict_with_fallback(model, X)
             dfs.append(part)
         df_all = pd.concat(dfs, ignore_index=True)
     else:
@@ -167,7 +168,7 @@ def node_ml_score(state: PipelineState) -> dict:
         X, _, _ = prepare_ml_arrays(df_all)
         if feat_names:
             X = X.reindex(columns=feat_names, fill_value=0)
-        df_all["ml_score"] = predict(model, X)
+        df_all["ml_score"] = predict_with_fallback(model, X)
 
     return {"df_full": df_all, "model": model}
 

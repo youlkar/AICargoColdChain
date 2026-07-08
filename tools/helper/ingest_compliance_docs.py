@@ -1,9 +1,8 @@
-# Script to ingest compliance documents from Supabase Storage into vector store
+# Script to ingest compliance documents from Azure Blob Storage into vector store
 import os
 import sys
 import tempfile
 from pathlib import Path
-from io import BytesIO
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -12,11 +11,8 @@ load_dotenv()
 # Add project root to path so `tools.*` and `backend.*` imports resolve
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-from supabase import create_client, Client
 from tools.helper.document_parser import ComplianceDocumentParser
-# from tools.helper.document_parser import ComplianceDocumentParser
 from vector_store import ComplianceVectorStore
-# from tools.helper.vector_store import ComplianceVectorStore
 
 
 # document metadata (maps to files in Supabase Storage)
@@ -104,90 +100,62 @@ DOCUMENTS = [
     },
 ]
 
-class SupabaseStorageClient:
+class AzureBlobStorageClient:
+    """
+    Azure Blob Storage client for compliance PDFs.
+    Drop-in replacement for the old SupabaseStorageClient.
+    Same interface: list_files(), download_file().
+    """
 
-    # client for fetching files from Supabase Storage
-    
-    def __init__(self, bucket_name: str = 'compliance_docs'):
-        supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_KEY')
-        
-        if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
-        
-        self.client: Client = create_client(supabase_url, supabase_key)
-        self.bucket_name = bucket_name
-        
-        print(f"[STORAGE] Connected to Supabase Storage")
-        print(f"[STORAGE] Bucket: {bucket_name}")
-        print(f"[DEBUG] Supabase URL: {supabase_url}")
-        print(f"[DEBUG] API Key: ***{supabase_key[-10:] if len(supabase_key) > 10 else '***'}")
-        
-        # Test if we can access storage at all
-        try:
-            buckets = self.client.storage.list_buckets()
-            print(f"[DEBUG] Available buckets: {[b.name for b in buckets]}")
-        except Exception as e:
-            print(f"[DEBUG] Could not list buckets: {e}")
-    
+    def __init__(self, container_name: str = None):
+        from azure.storage.blob import BlobServiceClient
+        conn_str = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+        if not conn_str:
+            raise ValueError("AZURE_STORAGE_CONNECTION_STRING must be set in .env")
+        self.container_name = (
+            container_name
+            or os.environ.get("AZURE_STORAGE_CONTAINER", "compliance-docs")
+        )
+        service = BlobServiceClient.from_connection_string(conn_str)
+        self.container = service.get_container_client(self.container_name)
+        print(f"[STORAGE] Connected to Azure Blob Storage (container: {self.container_name})")
+
     def list_files(self) -> list:
-        # list all files in the bucket
         try:
-            print(f"[DEBUG] Attempting to list files from bucket: {self.bucket_name}")
-            files = self.client.storage.from_(self.bucket_name).list()
-            print(f"[DEBUG] Raw response from list(): {files}")
-            print(f"[DEBUG] Response type: {type(files)}")
-            
-            if files:
-                print(f"[DEBUG] Found {len(files)} items")
-                for i, file in enumerate(files[:3]):  # Show first 3 files for debugging
-                    print(f"[DEBUG] File {i}: {file}")
-            
-            return files if files else []
+            blobs = list(self.container.list_blobs())
+            files = [
+                {
+                    "name": b.name,
+                    "metadata": {"size": b.size},
+                    "created_at": str(b.creation_time),
+                }
+                for b in blobs
+            ]
+            print(f"[DEBUG] Found {len(files)} blobs in container '{self.container_name}'")
+            return files
         except Exception as e:
-            print(f"[ERROR] Failed to list files: {e}")
-            print(f"[ERROR] Error type: {type(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"[ERROR] Failed to list blobs: {e}")
             return []
-    
+
     def download_file(self, file_path: str) -> bytes:
-        # download file from Supabase Storage
         try:
             print(f"[STORAGE] Downloading: {file_path}")
-            
-            # Download file
-            response = self.client.storage.from_(self.bucket_name).download(file_path)
-            
-            if response:
-                print(f"Downloaded {len(response)} bytes")
-                return response
-            else:
-                print(f"[ERROR] Empty response for {file_path}")
-                return None
-                
+            data = self.container.get_blob_client(file_path).download_blob().readall()
+            print(f"[STORAGE] Downloaded {len(data)} bytes")
+            return data
         except Exception as e:
             print(f"[ERROR] Failed to download {file_path}: {e}")
-            return None
-    
-    def get_public_url(self, file_path: str) -> str:
-        # get public URL for a file (if bucket is public)
-        try:
-            url = self.client.storage.from_(self.bucket_name).get_public_url(file_path)
-            return url
-        except Exception as e:
-            print(f"[ERROR] Failed to get public URL: {e}")
             return None
 
 
 def ingest_documents():
-    # ingest all compliance documents from Supabase Storage
+    # ingest all compliance documents from Azure Blob Storage
     print("="*80)
-    print("Ingesting compliance documents from Supabase Storage")
+    print("Ingesting compliance documents from Azure Blob Storage")
     print("="*80)
-    
+
     # Initialize clients
-    storage_client = SupabaseStorageClient(bucket_name='compliance_docs')
+    storage_client = AzureBlobStorageClient()
     parser = ComplianceDocumentParser(chunk_size=500, chunk_overlap=50)
     vector_store = ComplianceVectorStore()
     
@@ -196,7 +164,7 @@ def ingest_documents():
     available_files = storage_client.list_files()
     
     if not available_files:
-        print("No files found in Supabase Storage bucket 'compliance_docs'")
+        print("No files found in Azure Blob Storage container 'compliance-docs'")
         return
     
     print(f"[INFO] Found {len(available_files)} files in storage:")
@@ -308,12 +276,12 @@ def ingest_documents():
 
 
 def list_storage_files():
-    # helper function to list files in Supabase Storage
+    # helper function to list files in Azure Blob Storage
     print("="*80)
-    print("FILES IN SUPABASE STORAGE BUCKET 'compliance_docs'")
+    print("FILES IN AZURE BLOB STORAGE CONTAINER 'compliance-docs'")
     print("="*80)
-    
-    storage_client = SupabaseStorageClient(bucket_name='compliance_docs')
+
+    storage_client = AzureBlobStorageClient()
     files = storage_client.list_files()
     
     if not files:

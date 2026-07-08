@@ -19,6 +19,17 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 import orchestrator.llm_provider as prov
 
+# Azure Application Insights — additive infra telemetry alongside LangSmith's
+# LLM-level tracing. No-op if APPLICATIONINSIGHTS_CONNECTION_STRING isn't set.
+if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    try:
+        from azure.monitor.opentelemetry import configure_azure_monitor
+
+        configure_azure_monitor()
+        logging.getLogger(__name__).info("Application Insights telemetry enabled")
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Application Insights init failed: %s", exc)
+
 
 from backend.models import (
     ApprovalDecision,
@@ -276,6 +287,44 @@ async def _stream_listener_loop():
         logger.error("Stream listener error: %s", e)
 
 
+def _rehydrate_approvals_from_history(rows: list) -> None:
+    """Restore _PENDING_APPROVALS from persisted runs after a backend restart.
+
+    Only restores runs that are genuinely awaiting approval and don't already
+    have a record in the in-memory store (avoids double-adding if called
+    multiple times).
+    """
+    from tools.approval_workflow import _PENDING_APPROVALS
+    from datetime import datetime, timezone
+    restored = 0
+    for run in rows:
+        if not run.get("awaiting_approval"):
+            continue
+        approval_id = run.get("approval_id")
+        if not approval_id or approval_id in _PENDING_APPROVALS:
+            continue
+        _PENDING_APPROVALS[approval_id] = {
+            "approval_id": approval_id,
+            "shipment_id": run.get("shipment_id"),
+            "window_id": run.get("window_id"),
+            "container_id": run.get("container_id"),
+            "action_description": run.get("approval_reason") or run.get("decision_summary", ""),
+            "risk_tier": run.get("risk_tier", "UNKNOWN"),
+            "urgency": "high" if run.get("risk_tier") in ("CRITICAL", "HIGH") else "medium",
+            "proposed_actions": run.get("proposed_tools", []),
+            "justification": run.get("llm_reasoning", ""),
+            "requested_by": "orchestrator",
+            "status": "pending",
+            "created_at": run.get("timestamp", datetime.now(timezone.utc).isoformat()),
+            "decided_at": None,
+            "decided_by": None,
+            "decision": None,
+        }
+        restored += 1
+    if restored:
+        logger.info("Re-hydrated %d approval(s) from orchestrator history", restored)
+
+
 @asynccontextmanager
 async def lifespan(app_instance):
     _get_ml_model()  # load eagerly so failures surface at startup, not on first request
@@ -286,6 +335,9 @@ async def lifespan(app_instance):
         if rows:
             _orchestrator_history.extend(rows)
             logger.info("Loaded %d orchestrator runs from Supabase", len(rows))
+            # Re-hydrate in-memory approvals queue from persisted history so the
+            # /approvals page stays in sync with agent activity after restarts.
+            _rehydrate_approvals_from_history(rows)
     except Exception as exc:
         logger.warning("orchestrator_runs load failed: %s", exc)
 
