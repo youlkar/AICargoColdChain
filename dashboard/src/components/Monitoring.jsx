@@ -10,6 +10,7 @@ import {
 import { Activity, AlertTriangle, ThermometerSun, Zap, Shield, TrendingUp } from 'lucide-react';
 import TierBadge from './TierBadge';
 import { TIER_COLORS } from '../lib/colors';
+import { useTheme } from '../lib/ThemeContext';
 
 const TIER_BORDER = {
   CRITICAL: 'border-l-red-500 bg-red-500/[0.04]',
@@ -33,6 +34,8 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 export default function Monitoring() {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const [feed, setFeed] = useState([]);
   const [page, setPage] = useState(0);
   const { data: analytics } = useApi('/analytics');
@@ -195,7 +198,7 @@ export default function Monitoring() {
                   </div>
                   {/* Mini score bar */}
                   <div className="w-16 shrink-0">
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: isLight ? '#e2e8f0' : '#1e293b' }}>
                       <div className="h-full rounded-full" style={{
                         width: `${Math.min(c.max_score * 100, 100)}%`,
                         backgroundColor: TIER_COLORS[c.risk_tier] || '#64748b',

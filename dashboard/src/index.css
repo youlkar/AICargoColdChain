@@ -163,15 +163,6 @@ html.light {
   --accent-red: #dc2626;
   --accent-amber: #b45309;
   --accent-emerald: #059669;
-  /* KPI gradient card tokens — light (slightly deeper for contrast) */
-  --kpi-blue-start:   #1e40af;
-  --kpi-blue-end:     #2563eb;
-  --kpi-purple-start: #5b21b6;
-  --kpi-purple-end:   #7c3aed;
-  --kpi-amber-start:  #92400e;
-  --kpi-amber-end:    #b45309;
-  --kpi-teal-start:   #134e4a;
-  --kpi-teal-end:     #0f766e;
 }
 
 html.light body { background: var(--bg-base); color: var(--text-primary); }
@@ -196,6 +187,9 @@ html.light .bg-white\/\[0\.03\] { background-color: rgba(15, 23, 42, 0.04); }
 html.light .bg-white\/\[0\.04\] { background-color: rgba(15, 23, 42, 0.05); }
 html.light .bg-white\/\[0\.06\] { background-color: rgba(15, 23, 42, 0.06); }
 html.light .hover\:bg-white\/\[0\.04\]:hover { background-color: rgba(15, 23, 42, 0.05); }
+html.light .hover\:bg-white\/\[0\.02\]:hover { background-color: rgba(15, 23, 42, 0.04); }
+html.light .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(15, 23, 42, 0.07); }
+html.light .hover\:bg-white\/\[0\.03\]:hover { background-color: rgba(15, 23, 42, 0.05); }
 
 /* Hairline borders: same flip */
 html.light .border-white\/\[0\.04\] { border-color: rgba(15, 23, 42, 0.06); }
@@ -204,6 +198,9 @@ html.light .border-white\/\[0\.08\] { border-color: rgba(15, 23, 42, 0.10); }
 html.light .border-white\/\[0\.12\] { border-color: rgba(15, 23, 42, 0.14); }
 html.light .border-white\/10 { border-color: rgba(15, 23, 42, 0.12); }
 html.light .border-white\/30 { border-color: rgba(15, 23, 42, 0.25); }
+/* divide-* utilities generate border-color on child elements — mirror the border-white overrides */
+html.light .divide-white\/\[0\.04\] > :not([hidden]) ~ :not([hidden]) { border-color: rgba(15, 23, 42, 0.06); }
+html.light .divide-white\/\[0\.06\] > :not([hidden]) ~ :not([hidden]) { border-color: rgba(15, 23, 42, 0.08); }
 
 /* Elevated panel surfaces (bg-slate-800/700 family used inside dark cards) */
 html.light .bg-slate-800 { background-color: #ffffff; }

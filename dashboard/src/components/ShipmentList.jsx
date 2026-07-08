@@ -7,10 +7,13 @@ import {
 } from 'recharts';
 import { Ship, Package, ChevronRight, AlertTriangle, Thermometer } from 'lucide-react';
 import { TIER_COLORS } from '../lib/colors';
+import { useTheme } from '../lib/ThemeContext';
 
 const TIERS = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 export default function ShipmentList() {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const [filter, setFilter] = useState('ALL');
   const { data: shipments, loading, error } = useApi(filter === 'ALL' ? '/shipments' : `/shipments?risk_tier=${filter}`, [filter]);
   const { data: analytics } = useApi('/analytics');
@@ -130,7 +133,7 @@ export default function ShipmentList() {
                           {/* Score bar */}
                           <div className="w-24 shrink-0">
                             <div className="flex items-center gap-2">
-                              <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: isLight ? '#e2e8f0' : '#1e293b' }}>
                                 <div className="h-full rounded-full transition-all" style={{
                                   width: `${Math.min(c.max_score * 100, 100)}%`,
                                   backgroundColor: TIER_COLORS[c.risk_tier] || '#64748b',
