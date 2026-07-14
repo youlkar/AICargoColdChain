@@ -1,13 +1,20 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
 import TierBadge from './TierBadge';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie,
 } from 'recharts';
-import { ScrollText, ChevronDown, ChevronUp, Shield, AlertTriangle, FileCheck } from 'lucide-react';
-
-const TIER_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
+import {
+  ScrollText, ChevronDown, ChevronUp, Shield, AlertTriangle, FileCheck,
+  CheckCircle, Clock, ArrowRight,
+} from 'lucide-react';
+import { TIER_COLORS } from '../lib/colors';
+import { getAgentMeta } from '../lib/agents.jsx';
+import { getRunKey } from '../lib/runKey';
+import { runStatusSemantic } from '../lib/runStatus';
+import { timeAgo } from '../lib/format';
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -19,14 +26,131 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-export default function AuditLog() {
-  const [tierFilter, setTierFilter] = useState('');
-  const [expanded, setExpanded] = useState(null);
-  const path = tierFilter ? `/audit-logs?limit=200&risk_tier=${tierFilter}` : '/audit-logs?limit=200';
-  const { data, loading, error } = useApi(path, [tierFilter]);
+const RUN_STATUS_LABEL = { crit: 'Awaiting', warn: 'Corrections', ok: 'Resolved', info: 'No actions' };
+const RUN_STATUS_CLS = {
+  crit: 'bg-amber-500/10 text-amber-400',
+  warn: 'bg-amber-500/10 text-amber-400',
+  ok: 'bg-emerald-500/10 text-emerald-400',
+  info: 'bg-slate-500/10 text-slate-400',
+};
 
-  const stats = useMemo(() => {
-    if (!data || !data.length) return null;
+// Best-effort one-line summary of a tool's result, checking known fields in
+// priority order so the audit trail shows something useful without needing
+// per-agent-type rendering branches.
+function summarizeToolResult(result) {
+  if (!result || typeof result !== 'object') return null;
+  const r = result;
+  if (r.compliance_status) return `${r.compliance_status}${r.product_disposition ? ` → ${r.product_disposition}` : ''}`;
+  if (r.selected_route || r.recommended_route) return r.selected_route || r.recommended_route;
+  if (r.recommended_facility || r.facility_name) return r.recommended_facility || r.facility_name;
+  if (r.estimated_loss_usd != null) return `$${Number(r.estimated_loss_usd).toLocaleString()} estimated loss`;
+  if (r.estimated_loss != null) return `$${Number(r.estimated_loss).toLocaleString()} estimated loss`;
+  if (r.status) return r.status;
+  return null;
+}
+
+function RunCard({ run, expanded, onToggle }) {
+  const windowId = run.window_id || run._window_id;
+  const level = runStatusSemantic(run);
+  const actions = run.actions_taken || [];
+  const uniqueTools = [...new Set(actions.map(a => a?.tool).filter(Boolean))];
+  const runKey = getRunKey(run);
+  const findings = (run.guardrail_findings || []).filter(f => f && f.passed === false);
+
+  return (
+    <div className="glass-card-sm overflow-hidden animate-fade-in">
+      <div className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-white/[0.02] transition" onClick={onToggle}>
+        <TierBadge tier={run.risk_tier} />
+        <span className="font-mono text-xs font-semibold text-white">{windowId}</span>
+        <span className="text-[11px] text-slate-500">{run.shipment_id}{run.container_id ? ` / ${run.container_id}` : ''}</span>
+
+        <div className="flex flex-wrap gap-[3px]">
+          {uniqueTools.slice(0, 5).map(t => {
+            const meta = getAgentMeta(t);
+            return (
+              <span key={t} className={`px-[7px] py-[2px] rounded-full text-[10px] font-bold border ${meta.color.bg} ${meta.color.text} ${meta.color.border}`}>
+                {meta.name}
+              </span>
+            );
+          })}
+          {uniqueTools.length > 5 && (
+            <span className="text-[10px] text-slate-500 self-center">+{uniqueTools.length - 5}</span>
+          )}
+        </div>
+
+        <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-[10px] py-[3px] rounded-md ml-2 ${RUN_STATUS_CLS[level]}`}>
+          {level === 'ok' ? <CheckCircle className="w-[10px] h-[10px]" /> : <Clock className="w-[10px] h-[10px]" />}
+          {RUN_STATUS_LABEL[level]}
+        </span>
+        {findings.length > 0 && <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+
+        <span className="text-[10px] text-slate-600 ml-auto shrink-0">{timeAgo(run.timestamp)}</span>
+        {expanded ? <ChevronUp className="w-4 h-4 text-slate-600" /> : <ChevronDown className="w-4 h-4 text-slate-600" />}
+      </div>
+
+      {expanded && (
+        <div className="px-5 pb-4 border-t border-white/[0.06] pt-3 grid grid-cols-4 gap-4 text-xs animate-fade-in">
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Scores</p>
+            <p className="text-slate-400">Fused: <span className="font-mono text-white">{run.fused_risk_score?.toFixed(4) ?? '—'}</span></p>
+            <p className="text-slate-400">ML Spoilage: <span className="font-mono text-emerald-400">{run.ml_spoilage_probability?.toFixed(4) ?? '—'}</span></p>
+            <p className="text-slate-400">Confidence: <span className="font-mono text-cyan-400">{run.confidence?.toFixed(2) ?? '—'}</span></p>
+            {run.replan_count > 0 && <p className="text-amber-400 mt-1">{run.replan_count} replan(s)</p>}
+          </div>
+
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Key Drivers</p>
+            {run.key_drivers?.length > 0
+              ? run.key_drivers.slice(0, 4).map((k, j) => <p key={j} className="text-orange-400/80">{typeof k === 'string' ? k : JSON.stringify(k)}</p>)
+              : <p className="text-slate-600">none</p>}
+          </div>
+
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Agent Results</p>
+            {actions.length > 0 ? actions.map((a, j) => {
+              const summary = summarizeToolResult(a.result);
+              return (
+                <p key={j} className="text-slate-400 truncate">
+                  <span className="text-cyan-400/90">{getAgentMeta(a.tool).name}</span>
+                  {summary ? <>: <span className="text-white">{summary}</span></> : null}
+                </p>
+              );
+            }) : <p className="text-slate-600">none</p>}
+            {findings.length > 0 && (
+              <p className="text-red-400 font-semibold mt-1">{findings.length} guardrail finding(s)</p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-slate-500 uppercase tracking-wider mb-1.5 font-medium text-[10px]">Decision</p>
+            <p className="text-slate-400 line-clamp-4">{run.decision_summary || run.llm_reasoning || run.approval_reason || '—'}</p>
+            {run.requires_approval && <p className="text-amber-400 font-semibold mt-1">Requires approval</p>}
+            <Link
+              to={`/agent-v2/runs/${encodeURIComponent(runKey)}`}
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1 text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 transition mt-2"
+            >
+              Full run details <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AuditLog() {
+  const [viewMode, setViewMode] = useState('compliance'); // 'compliance' | 'runs'
+  const [tierFilter, setTierFilter] = useState('');
+
+  const [expanded, setExpanded] = useState(null);
+
+  const compliancePath = tierFilter ? `/audit-logs?limit=200&risk_tier=${tierFilter}` : '/audit-logs?limit=200';
+  const path = viewMode === 'runs' ? '/orchestrator/history?limit=30' : compliancePath;
+  const { data, loading, error } = useApi(path, [viewMode, tierFilter]);
+
+  const complianceStats = useMemo(() => {
+    if (viewMode !== 'compliance' || !data || !data.length) return null;
     const tierCounts = {};
     const ruleCounts = {};
     let needsApproval = 0;
@@ -44,7 +168,14 @@ export default function AuditLog() {
       .slice(0, 8)
       .map(([k, v]) => ({ rule: k.replace(/_/g, ' '), count: v }));
     return { total: data.length, tierCounts, pieData, ruleData, needsApproval };
-  }, [data]);
+  }, [data, viewMode]);
+
+  const runStats = useMemo(() => {
+    if (viewMode !== 'runs' || !data || !data.length) return null;
+    const awaiting = data.filter(d => runStatusSemantic(d) === 'crit').length;
+    const resolved = data.filter(d => runStatusSemantic(d) === 'ok').length;
+    return { total: data.length, awaiting, resolved };
+  }, [data, viewMode]);
 
   return (
     <div className="p-6 max-w-[1440px] mx-auto space-y-5">
@@ -53,26 +184,35 @@ export default function AuditLog() {
           <h1 className="text-2xl font-bold text-white">Compliance Audit Log</h1>
           <p className="text-sm text-slate-500 mt-0.5">GDP / FDA 21 CFR 11 compliant assessment records</p>
         </div>
-        <select value={tierFilter} onChange={e => setTierFilter(e.target.value)}
-          className="bg-slate-800/60 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-cyan-500/40 transition">
-          <option value="">All tiers</option>
-          <option value="CRITICAL">CRITICAL</option>
-          <option value="HIGH">HIGH</option>
-          <option value="MEDIUM">MEDIUM</option>
-          <option value="LOW">LOW</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <select value={viewMode} onChange={e => setViewMode(e.target.value)}
+            className="bg-slate-800/60 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-cyan-500/40 transition">
+            <option value="compliance">Compliance Records</option>
+            <option value="runs">Latest Shipment Runs</option>
+          </select>
+          {viewMode === 'compliance' && (
+            <select value={tierFilter} onChange={e => setTierFilter(e.target.value)}
+              className="bg-slate-800/60 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-cyan-500/40 transition">
+              <option value="">All tiers</option>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="HIGH">HIGH</option>
+              <option value="MEDIUM">MEDIUM</option>
+              <option value="LOW">LOW</option>
+            </select>
+          )}
+        </div>
       </div>
 
       {/* Compliance Metrics */}
-      {stats && (
+      {viewMode === 'compliance' && complianceStats && (
         <div className="grid grid-cols-4 gap-4">
           <div className="glass-card-sm p-4 animate-slide-up">
             <div className="flex items-center gap-2 mb-2">
               <FileCheck className="w-4 h-4 text-cyan-400" />
               <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Total Records</p>
             </div>
-            <p className="text-2xl font-bold text-white">{stats.total}</p>
-            {stats.needsApproval > 0 && <p className="text-[10px] text-amber-400 mt-1">{stats.needsApproval} require approval</p>}
+            <p className="text-2xl font-bold text-white">{complianceStats.total}</p>
+            {complianceStats.needsApproval > 0 && <p className="text-[10px] text-amber-400 mt-1">{complianceStats.needsApproval} require approval</p>}
           </div>
 
           <div className="glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
@@ -80,13 +220,13 @@ export default function AuditLog() {
             <div className="flex items-center gap-3">
               <div className="w-14 h-14">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={stats.pieData} dataKey="value" cx="50%" cy="50%" innerRadius={16} outerRadius={26} strokeWidth={0}>
-                    {stats.pieData.map(d => <Cell key={d.name} fill={TIER_COLORS[d.name] || '#64748b'} />)}
+                  <PieChart><Pie data={complianceStats.pieData} dataKey="value" cx="50%" cy="50%" innerRadius={16} outerRadius={26} strokeWidth={0}>
+                    {complianceStats.pieData.map(d => <Cell key={d.name} fill={TIER_COLORS[d.name] || '#64748b'} />)}
                   </Pie></PieChart>
                 </ResponsiveContainer>
               </div>
               <div className="space-y-0.5">
-                {stats.pieData.map(d => (
+                {complianceStats.pieData.map(d => (
                   <div key={d.name} className="flex items-center gap-1.5 text-[10px]">
                     <span className="w-2 h-2 rounded-full" style={{ background: TIER_COLORS[d.name] || '#64748b' }} />
                     <span className="text-slate-400">{d.name}</span>
@@ -100,7 +240,7 @@ export default function AuditLog() {
           <div className="col-span-2 glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '120ms' }}>
             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-2">Most Triggered Rules</p>
             <ResponsiveContainer width="100%" height={80}>
-              <BarChart data={stats.ruleData} layout="vertical" margin={{ left: 0, right: 0 }}>
+              <BarChart data={complianceStats.ruleData} layout="vertical" margin={{ left: 0, right: 0 }}>
                 <XAxis type="number" hide />
                 <YAxis type="category" dataKey="rule" tick={{ fontSize: 9, fill: '#94a3b8' }} width={120} stroke="transparent" />
                 <Tooltip content={<ChartTooltip />} />
@@ -111,10 +251,28 @@ export default function AuditLog() {
         </div>
       )}
 
+      {/* Runs Metrics */}
+      {viewMode === 'runs' && runStats && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="glass-card-sm p-4 animate-slide-up">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1">Total Runs</p>
+            <p className="text-2xl font-bold text-white">{runStats.total}</p>
+          </div>
+          <div className="glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1">Awaiting Approval</p>
+            <p className="text-2xl font-bold text-amber-400">{runStats.awaiting}</p>
+          </div>
+          <div className="glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '120ms' }}>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1">Resolved</p>
+            <p className="text-2xl font-bold text-emerald-400">{runStats.resolved}</p>
+          </div>
+        </div>
+      )}
+
       {loading && (
         <div className="flex items-center gap-3 text-slate-500 py-8">
           <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-          Loading audit log...
+          Loading {viewMode === 'runs' ? 'shipment runs' : 'audit log'}...
         </div>
       )}
       {error && <p className="text-red-400">Error: {error}</p>}
@@ -122,13 +280,38 @@ export default function AuditLog() {
       {data && data.length === 0 && (
         <div className="glass-card p-10 text-center">
           <ScrollText className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">No audit records found.</p>
+          <p className="text-slate-400">{viewMode === 'runs' ? 'No shipment runs found.' : 'No audit records found.'}</p>
         </div>
       )}
 
-      {data && data.length > 0 && (
+      {/* Runs view */}
+      {viewMode === 'runs' && data && data.length > 0 && (
         <div className="space-y-2">
-          {data.map((rec, i) => (
+          {data.map((run, i) => (
+            <div key={getRunKey(run)} style={{ animationDelay: `${Math.min(i * 15, 500)}ms` }}>
+              <RunCard run={run} expanded={expanded === i} onToggle={() => setExpanded(expanded === i ? null : i)} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Compliance view */}
+      {viewMode === 'compliance' && data && data.length > 0 && (
+        <div className="space-y-2">
+          {data.map((rec, i) => {
+            if (rec.entry_type === 'guardrail_finding') {
+              return (
+                <div key={i} className="glass-card-sm overflow-hidden animate-fade-in px-5 py-3 flex items-center gap-3"
+                  style={{ animationDelay: `${Math.min(i * 15, 500)}ms` }}>
+                  <AlertTriangle className={`w-4 h-4 shrink-0 ${rec.severity === 'critical' ? 'text-red-400' : 'text-amber-400'}`} />
+                  <span className="font-mono text-xs font-semibold text-white">{rec.check}</span>
+                  <span className="text-[11px] text-slate-500">{rec.agent}</span>
+                  <span className="text-xs text-slate-400 truncate">{rec.message}</span>
+                  <span className="text-[10px] text-slate-600 ml-auto shrink-0">{rec.timestamp}</span>
+                </div>
+              );
+            }
+            return (
             <div key={i} className="glass-card-sm overflow-hidden animate-fade-in" style={{ animationDelay: `${Math.min(i * 15, 500)}ms` }}>
               <div className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-white/[0.02] transition"
                    onClick={() => setExpanded(expanded === i ? null : i)}>
@@ -169,7 +352,8 @@ export default function AuditLog() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

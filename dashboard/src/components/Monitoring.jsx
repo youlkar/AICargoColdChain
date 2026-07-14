@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApi, getApi } from '../hooks/useApi';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
@@ -8,8 +9,9 @@ import {
 } from 'recharts';
 import { Activity, AlertTriangle, ThermometerSun, Zap, Shield, TrendingUp } from 'lucide-react';
 import TierBadge from './TierBadge';
+import { TIER_COLORS } from '../lib/colors';
+import { useTheme } from '../lib/ThemeContext';
 
-const TIER_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
 const TIER_BORDER = {
   CRITICAL: 'border-l-red-500 bg-red-500/[0.04]',
   HIGH: 'border-l-orange-500 bg-orange-500/[0.03]',
@@ -32,10 +34,13 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 export default function Monitoring() {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const [feed, setFeed] = useState([]);
   const [page, setPage] = useState(0);
   const { data: analytics } = useApi('/analytics');
   const { data: overview } = useApi('/risk/overview');
+  const { messages: liveWindows, connected } = useWebSocket(['ingest_scored']);
 
   const loadMore = useCallback(async () => {
     const rows = await getApi(`/windows?limit=30&offset=${page * 30}`);
@@ -43,6 +48,16 @@ export default function Monitoring() {
   }, [page]);
 
   useEffect(() => { loadMore(); }, [loadMore]);
+
+  // Prepend newly-streamed, freshly-scored windows as they arrive over the
+  // existing /ws/events channel — no extra polling or DB reads involved.
+  const latestLiveWindow = liveWindows[liveWindows.length - 1]?.result;
+  useEffect(() => {
+    if (!latestLiveWindow) return;
+    setFeed(prev => prev.some(w => w.window_id === latestLiveWindow.window_id)
+      ? prev
+      : [latestLiveWindow, ...prev]);
+  }, [latestLiveWindow]);
 
   const criticals = feed.filter(w => w.risk_tier === 'CRITICAL');
 
@@ -55,21 +70,23 @@ export default function Monitoring() {
         </div>
         <div className="flex items-center gap-2">
           <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+            {connected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />}
+            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${connected ? 'bg-emerald-500' : 'bg-slate-500'}`} />
           </span>
-          <span className="text-xs text-emerald-400 font-medium">Live</span>
+          <span className={`text-xs font-medium ${connected ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {connected ? 'Live' : 'Reconnecting…'}
+          </span>
         </div>
       </div>
 
       {/* KPI strip */}
       {overview && (
         <div className="grid grid-cols-5 gap-3">
-          <KPI icon={Activity} label="Windows" value={overview.total_windows.toLocaleString()} gradient="from-cyan-500 to-blue-600" />
+          <KPI icon={Activity} label="Escalated Windows" value={overview.total_windows.toLocaleString()} gradient="from-cyan-500 to-blue-600" />
           <KPI icon={AlertTriangle} label="Critical" value={overview.tier_counts.CRITICAL || 0} gradient="from-red-500 to-rose-600" />
           <KPI icon={Zap} label="High" value={overview.tier_counts.HIGH || 0} gradient="from-orange-500 to-amber-600" />
           <KPI icon={ThermometerSun} label="Medium" value={overview.tier_counts.MEDIUM || 0} gradient="from-yellow-500 to-amber-500" />
-          <KPI icon={Shield} label="Low" value={overview.tier_counts.LOW || 0} gradient="from-emerald-500 to-green-600" />
+          <KPI icon={Shield} label="Low" value="Not tracked" gradient="from-emerald-500 to-green-600" />
         </div>
       )}
 
@@ -181,7 +198,7 @@ export default function Monitoring() {
                   </div>
                   {/* Mini score bar */}
                   <div className="w-16 shrink-0">
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: isLight ? '#e2e8f0' : '#1e293b' }}>
                       <div className="h-full rounded-full" style={{
                         width: `${Math.min(c.max_score * 100, 100)}%`,
                         backgroundColor: TIER_COLORS[c.risk_tier] || '#64748b',

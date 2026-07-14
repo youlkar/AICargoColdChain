@@ -115,6 +115,7 @@ class MockComplianceVectorStore:
         self,
         query: str,
         limit: int = 5,
+        filters: Optional[Dict] = None,
         similarity_threshold: float = 0.3,
     ) -> List[Dict]:
         query_lower = query.lower()
@@ -127,6 +128,12 @@ class MockComplianceVectorStore:
                 scored.append({**doc, "similarity": round(score, 3)})
         scored.sort(key=lambda d: d["similarity"], reverse=True)
         return scored[:limit]
+
+    def get_by_regulation_id(self, regulation_id: str) -> List[Dict]:
+        return [d for d in self._docs if d.get("regulation_id") == regulation_id]
+
+    def delete_all(self):
+        self._docs = []
 
     def count_documents(self) -> int:
         return len(self._docs)

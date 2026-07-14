@@ -1,16 +1,6 @@
 """
-Agentic Notification Agent - LangChain Tool Integration
+Agentic Notification Agent
 Intelligent multi-channel stakeholder notification with LLM-driven decision making
-
-Integrates Yash's notification subsystem:
-  - LLM-driven strategic planner (Groq) for severity + stakeholder selection
-  - LLM-driven message composer for role-specific, channel-appropriate messages
-  - Multi-channel delivery: Gmail SMTP / SendGrid email, Slack, dashboard, webhook
-  - Stakeholder registry with on-call routing
-  - FDA 21 CFR Part 11 audit trail generation
-
-Falls back to a simple structured payload when the agentic subsystem is
-unavailable (missing GROQ_API_KEY, import errors, etc.).
 """
 from __future__ import annotations
 
@@ -22,6 +12,11 @@ from typing import List, Optional
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+
+from tools.registry import REGISTRY, ToolMetadata
+
+
+from orchestrator.guardrails import _finding, redact_pii
 
 load_dotenv()
 
@@ -78,7 +73,7 @@ class NotificationInput(BaseModel):
 
 
 def _run_async_safely(coro):
-    """Run coroutine from sync code safely regardless of event-loop state."""
+    # Run coroutine from sync code safely regardless of event-loop state.
     try:
         asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -99,7 +94,7 @@ def _map_to_agentic_input(
     spoilage_probability: Optional[float] = None,
     facility_name: Optional[str] = None,
 ) -> "AgenticNotificationInput":
-    """Map orchestrator-level input to the rich AgenticNotificationInput model."""
+    # Map orchestrator-level input to the rich AgenticNotificationInput model.
     affected_facilities = []
     if facility_name:
         affected_facilities.append(facility_name)
@@ -177,7 +172,7 @@ def _execute(
     spoilage_probability: Optional[float] = None,
     facility_name: Optional[str] = None,
 ) -> dict:
-    """Execute agentic notification or fall back to simple payload."""
+    # Execute agentic notification or fall back to simple payload.
 
     agent = get_notification_agent()
 
@@ -228,12 +223,24 @@ def _execute(
         except Exception as e:
             print(f"[NOTIFICATION] Agentic workflow failed, falling back: {e}")
 
-    # ── Fallback: structured payload without LLM ──────────────────
+    # Fallback: structured payload without LLM
+    redacted_message, message_had_pii = redact_pii(message)
+    pii_finding = None
+    if message_had_pii:
+        pii_finding = _finding(
+            check="pii_detected",
+            severity="warning",
+            passed=False,
+            agent="notification_agent",
+            message="PII (email/phone/SSN) detected and redacted from notification message.",
+            details={"original_length": len(message), "redacted_length": len(redacted_message)},
+        )
+
     alert_payload: dict = {
         "shipment_id": shipment_id,
         "container_id": container_id,
         "risk_tier": risk_tier,
-        "message": message,
+        "message": redacted_message,
     }
     if revised_eta:
         alert_payload["revised_eta"] = revised_eta
@@ -242,7 +249,7 @@ def _execute(
     if facility_name:
         alert_payload["destination_facility"] = facility_name
 
-    return {
+    result = {
         "tool": "notification_agent",
         "status": "notification_queued",
         "shipment_id": shipment_id,
@@ -251,12 +258,15 @@ def _execute(
         "recipients": recipients,
         "channel": channel,
         "alert_payload": alert_payload,
-        "message_preview": message[:200],
+        "message_preview": redacted_message[:200],
         "delivered": False,
         "agentic_workflow": False,
         "requires_approval": risk_tier in ("HIGH", "CRITICAL"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if pii_finding is not None:
+        result["guardrail_finding"] = pii_finding
+    return result
 
 
 notification_tool = StructuredTool.from_function(
@@ -272,3 +282,15 @@ notification_tool = StructuredTool.from_function(
     ),
     args_schema=NotificationInput,
 )
+
+# register with dynamic tool registry
+REGISTRY.register(notification_tool, ToolMetadata(
+    name="notification_agent",
+    wave=1,
+    category="stakeholder",
+    applicable_tiers=["MEDIUM", "HIGH", "CRITICAL"],
+    applicable_phases=["*"],
+    applicable_products=["*"],
+    always_deferred=True,   # always held for post-approval
+    description="Multi-channel stakeholder notification with LLM message composition",
+))

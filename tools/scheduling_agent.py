@@ -574,3 +574,16 @@ scheduling_tool = StructuredTool.from_function(
     ),
     args_schema=SchedulingInput,
 )
+
+# Phase 3C — register with dynamic tool registry
+from tools.registry import REGISTRY, ToolMetadata
+REGISTRY.register(scheduling_tool, ToolMetadata(
+    name="scheduling_agent",
+    wave=2,
+    category="logistics",
+    applicable_tiers=["MEDIUM", "HIGH", "CRITICAL"],
+    applicable_phases=["*"],
+    applicable_products=["*"],
+    always_deferred=False,
+    description="Downstream facility rescheduling recommendations",
+))

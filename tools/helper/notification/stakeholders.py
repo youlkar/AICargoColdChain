@@ -26,7 +26,7 @@ class StakeholderRegistry:
                     recipient_id='DIR-001',
                     role=RecipientRole.DIRECTOR,
                     name='Dr. Robert Chen',
-                    email='robert.chen@pharmacold.com',
+                    email='yaoul.38491@gmail.com',
                     sms='+1-555-0001',
                     slack_handle='@robert.chen',
                     priority='URGENT',

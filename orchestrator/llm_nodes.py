@@ -1,13 +1,4 @@
-"""
-LLM-powered agentic nodes for the orchestration graph.
-
-These are TRUE agentic nodes: the LLM reasons about the situation, decides
-which tools to call, AND constructs the tool input payloads itself.
-
-The deterministic _build_tool_input() is only used as a safety net when the
-LLM produces malformed inputs -- it does NOT drive the agent's decisions.
-"""
-
+# LLM-powered agentic nodes for the orchestration graph.
 from __future__ import annotations
 
 import json
@@ -15,7 +6,8 @@ import logging
 import re
 from typing import Any, Dict, List
 
-from orchestrator.llm_provider import get_llm
+from orchestrator import guardrails
+from orchestrator.llm_provider import get_llm, track_usage
 from orchestrator.state import OrchestratorState, PlanStep, ToolResult
 from tools import TOOL_MAP
 
@@ -23,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response that may contain markdown fences."""
+    # Extract JSON from LLM response that may contain markdown fences.
     text = text.strip()
     m = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
     if m:
@@ -66,7 +58,7 @@ for _name, _tool in TOOL_MAP.items():
 TOOLS_REFERENCE = "\n".join(TOOL_SCHEMAS.values())
 
 
-# ── Agentic Plan ─────────────────────────────────────────────────────
+# Agentic Plan
 
 PLAN_SYSTEM = """You are an expert pharmaceutical cold-chain orchestration agent. You make autonomous decisions about shipment interventions based on GDP (Good Distribution Practice), FDA 21 CFR Part 211, and WHO PQS guidelines.
 
@@ -163,16 +155,25 @@ Respond with ONLY this JSON:
 Construct real tool_input values using the risk event data. Use actual shipment_id, container_id, etc."""
 
     try:
-        response = llm.invoke([
+        messages = [
             {"role": "system", "content": PLAN_SYSTEM},
             {"role": "user", "content": user_msg},
-        ])
+        ]
+        response = llm.invoke(messages)
+        usage = track_usage("plan", response)
         parsed = _extract_json(response.content)
 
-        if not parsed or "steps" not in parsed:
-            logger.warning("AGENT_PLAN: unparseable LLM response, falling back")
+        validated, findings = guardrails.validate_structured_output(
+            parsed, guardrails.AssessmentOutput, llm, messages, "plan",
+        )
+        if validated is None:
+            logger.warning("AGENT_PLAN: structured output invalid, falling back")
             from orchestrator.nodes import plan as det_plan
-            return det_plan(state)
+            result = det_plan(state)
+            result["guardrail_findings"] = findings
+            result["token_breakdown"] = usage
+            return result
+        parsed = validated.model_dump()
 
         draft: List[PlanStep] = []
         seen_tools: set = set()
@@ -187,10 +188,13 @@ Construct real tool_input values using the risk event data. Use actual shipment_
             seen_tools.add(tool_name)
 
             llm_input = s.get("tool_input", {})
-            if not isinstance(llm_input, dict) or not llm_input:
-                from orchestrator.nodes import _build_tool_input
-                llm_input = _build_tool_input(tool_name, ri, state)
+            if not isinstance(llm_input, dict):
+                llm_input = {}
+            from orchestrator.nodes import _build_tool_input
+            default_input = _build_tool_input(tool_name, ri, state)
+            if not llm_input:
                 logger.debug("AGENT_PLAN: empty tool_input for %s, used fallback builder", tool_name)
+            llm_input = {**default_input, **llm_input}
 
             draft.append(PlanStep(
                 step=len(draft) + 1,
@@ -217,6 +221,7 @@ Construct real tool_input values using the risk event data. Use actual shipment_
             "requires_approval": requires_approval,
             "approval_reason": parsed.get("approval_reason", state.get("primary_issue", "")),
             "llm_reasoning": reasoning,
+            "token_breakdown": usage,
         }
 
     except Exception as exc:
@@ -225,7 +230,7 @@ Construct real tool_input values using the risk event data. Use actual shipment_
         return det_plan(state)
 
 
-# ── Agentic Reflect (POST-EXECUTION: analyzes real results) ──────────
+# Agentic Reflect (POST-EXECUTION: analyzes real results)
 
 REFLECT_SYSTEM = """You are a GDP/FDA compliance auditor for pharmaceutical cold-chain logistics.
 You have received the EXECUTION RESULTS of an automated response to a risk event.
@@ -255,12 +260,7 @@ Return ONLY valid JSON."""
 
 
 def reflect_llm(state: OrchestratorState) -> dict:
-    """Post-execution reflection: LLM analyzes REAL tool outputs and identifies gaps.
-
-    notification_agent is always deferred to post-approval so it is excluded
-    from gap analysis here.  needs_revision is always True because the deferred
-    notification must be proposed in the revise step.
-    """
+    # Post-execution reflection: LLM analyzes REAL tool outputs and identifies gaps.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
 
@@ -355,15 +355,24 @@ Respond with ONLY this JSON:
 }}"""
 
     try:
-        response = llm.invoke([
+        messages = [
             {"role": "system", "content": REFLECT_SYSTEM},
             {"role": "user", "content": user_msg},
-        ])
+        ]
+        response = llm.invoke(messages)
+        usage = track_usage("reflect", response)
         parsed = _extract_json(response.content)
 
-        if not parsed or "notes" not in parsed:
+        validated, findings = guardrails.validate_structured_output(
+            parsed, guardrails.ReflectionOutput, llm, messages, "reflect",
+        )
+        if validated is None:
             from orchestrator.nodes import reflect as det_reflect
-            return det_reflect(state)
+            result = det_reflect(state)
+            result["guardrail_findings"] = findings
+            result["token_breakdown"] = usage
+            return result
+        parsed = validated.model_dump()
 
         notes = parsed.get("notes", [])
         if not isinstance(notes, list):
@@ -408,6 +417,7 @@ Respond with ONLY this JSON:
         return {
             "reflection_notes": cleaned_notes,
             "needs_revision": True,
+            "token_breakdown": usage,
         }
 
     except Exception as exc:
@@ -416,7 +426,7 @@ Respond with ONLY this JSON:
         return det_reflect(state)
 
 
-# ── Agentic Revise (proposes CORRECTIVE actions based on real results) ─
+# Agentic Revise (proposes CORRECTIVE actions based on real results)
 
 REVISE_SYSTEM = """You are a pharmaceutical cold-chain corrective action planner.
 You receive EXECUTION RESULTS and REFLECTION NOTES that identify gaps and quality issues.
@@ -433,7 +443,7 @@ RULES:
 
 
 def revise_llm(state: OrchestratorState) -> dict:
-    """Generate corrective plan: GAP/QUALITY tools + always-deferred notification."""
+    # Generate corrective plan: GAP/QUALITY tools + always-deferred notification.
     llm = get_llm()
     if llm is None:
         from orchestrator.nodes import revise as det_revise
@@ -499,21 +509,31 @@ Return ONLY corrective steps as JSON:
 }}"""
 
     try:
-        response = llm.invoke([
+        messages = [
             {"role": "system", "content": REVISE_SYSTEM},
             {"role": "user", "content": user_msg},
-        ])
+        ]
+        response = llm.invoke(messages)
+        usage = track_usage("revise", response)
         parsed = _extract_json(response.content)
 
-        if not parsed or "steps" not in parsed:
-            logger.warning("AGENT_REVISE: unparseable, falling back to deterministic")
+        validated, findings = guardrails.validate_structured_output(
+            parsed, guardrails.RevisionOutput, llm, messages, "revise",
+        )
+        if validated is None:
+            logger.warning("AGENT_REVISE: structured output invalid, falling back")
             from orchestrator.nodes import revise as det_revise
-            return det_revise(state)
+            result = det_revise(state)
+            result["guardrail_findings"] = findings
+            result["token_breakdown"] = usage
+            return result
+        parsed = validated.model_dump()
 
         notes_blob = " ".join(state.get("reflection_notes", [])).upper()
         quality_tools = set()
         for tool_key in TOOL_MAP:
-            if f"QUALITY [{tool_key.upper()}]" in notes_blob or f"QUALITY [{tool_key}]" in notes_blob:
+            pattern = rf"(QUALITY|GAP)\s*\[?{re.escape(tool_key.upper())}\]?"
+            if re.search(pattern, notes_blob):
                 quality_tools.add(tool_key)
 
         revised: List[PlanStep] = []
@@ -538,9 +558,11 @@ Return ONLY corrective steps as JSON:
                 continue
             seen_tools.add(tool_name)
             llm_input = s.get("tool_input", {})
-            if not isinstance(llm_input, dict) or not llm_input:
-                from orchestrator.nodes import _build_tool_input
-                llm_input = _build_tool_input(tool_name, ri, state)
+            if not isinstance(llm_input, dict):
+                llm_input = {}
+            from orchestrator.nodes import _build_tool_input
+            default_input = _build_tool_input(tool_name, ri, state)
+            llm_input = {**default_input, **llm_input}
             revised.append(PlanStep(
                 step=len(revised) + 1,
                 action=s.get("action", f"Execute {tool_name}"),
@@ -569,6 +591,7 @@ Return ONLY corrective steps as JSON:
             "plan_revised": True,
             "active_plan": revised,
             "llm_reasoning": combined_reasoning,
+            "token_breakdown": usage,
         }
 
     except Exception as exc:
@@ -577,7 +600,7 @@ Return ONLY corrective steps as JSON:
         return det_revise(state)
 
 
-# ── Agentic Observe (post-execution reflection) ──────────────────────
+# Agentic Observe (post-execution reflection)
 
 OBSERVE_SYSTEM = """You are a pharmaceutical cold-chain operations supervisor.
 You review tool execution results and decide if the response was adequate.
@@ -588,7 +611,7 @@ Return ONLY valid JSON."""
 
 
 def observe_llm(state: OrchestratorState) -> dict:
-    """LLM reviews execution results and decides if re-planning is needed."""
+    # LLM reviews execution results and decides if re-planning is needed.
     ri = state["risk_input"]
     tier = ri.get("risk_tier", "LOW")
 

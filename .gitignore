@@ -36,3 +36,4 @@ dashboard/dist/
 # Environment variables
 .env
 .env.local
+.superpowers/

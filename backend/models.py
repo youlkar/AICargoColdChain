@@ -1,6 +1,5 @@
 """
-Shared Pydantic models used by the FastAPI backend, risk engine, and
-the orchestrator.  These match the contract in system_prompt.md.
+Shared Pydantic models used by the FastAPI backend, risk engine, and the orchestrator.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-# ── Enums ─────────────────────────────────────────────────────────────
+# Enums
 
 class RiskTier(str, Enum):
     LOW = "LOW"
@@ -31,7 +30,7 @@ class TransitPhase(str, Enum):
     last_mile = "last_mile"
 
 
-# ── Risk engine output (→ orchestrator input) ────────────────────────
+# Risk engine output (-> orchestrator input)
 
 class KeyDriver(BaseModel):
     feature: str
@@ -39,8 +38,8 @@ class KeyDriver(BaseModel):
 
 
 class RiskEngineOutput(BaseModel):
-    """The payload the risk engine produces and the orchestrator consumes.
-    Matches the 'INPUT YOU WILL RECEIVE' section of system_prompt.md."""
+    # The payload the risk engine produces and the orchestrator consumes.
+    # Matches the 'INPUT YOU WILL RECEIVE' section of system_prompt.md.
 
     shipment_id: str
     container_id: str
@@ -59,7 +58,7 @@ class RiskEngineOutput(BaseModel):
     available_tools: List[str] = Field(default_factory=list)
 
 
-# ── Orchestrator output ──────────────────────────────────────────────
+# Orchestrator output
 
 class PlanStep(BaseModel):
     step: int
@@ -74,8 +73,8 @@ class ToolAction(BaseModel):
 
 
 class OrchestratorDecision(BaseModel):
-    """The output the orchestrator produces. Matches the OUTPUT FORMAT
-    section of system_prompt.md."""
+    # The output the orchestrator produces. Matches the OUTPUT FORMAT
+    # section of system_prompt.md.
 
     shipment_id: str
     container_id: str
@@ -97,7 +96,7 @@ class OrchestratorDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-# ── API response models ──────────────────────────────────────────────
+# API response models
 
 class ShipmentSummary(BaseModel):
     shipment_id: str
@@ -108,6 +107,7 @@ class ShipmentSummary(BaseModel):
     max_fused_score: float
     pct_critical: float
     pct_high: float
+    value_at_risk_usd: float = 0.0
 
 
 class WindowRisk(BaseModel):
@@ -120,18 +120,22 @@ class WindowRisk(BaseModel):
     window_end: str
     transit_phase: str
     avg_temp_c: float
-    det_score: float
-    ml_score: float
-    final_score: float
-    risk_tier: RiskTier
-    det_rules_fired: str
-    recommended_actions: str
-    requires_human_approval: bool
+    escalated: bool = False
+    det_score: Optional[float] = None
+    ml_score: Optional[float] = None
+    final_score: Optional[float] = None
+    risk_tier: Optional[RiskTier] = None
+    det_rules_fired: str = ""
+    recommended_actions: str = ""
+    requires_human_approval: bool = False
 
 
 class RiskOverview(BaseModel):
     total_windows: int
     total_shipments: int
+    escalated_shipments: int = 0
+    monitored_shipments: int = 0
+    total_value_at_risk_usd: float = 0.0
     tier_counts: Dict[str, int]
     tier_pcts: Dict[str, float]
     top_risky_shipments: List[ShipmentSummary]

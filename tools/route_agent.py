@@ -347,3 +347,16 @@ route_tool = StructuredTool.from_function(
     ),
     args_schema=RouteInput,
 )
+
+# Phase 3C — register with dynamic tool registry
+from tools.registry import REGISTRY, ToolMetadata
+REGISTRY.register(route_tool, ToolMetadata(
+    name="route_agent",
+    wave=1,
+    category="logistics",
+    applicable_tiers=["HIGH", "CRITICAL"],
+    applicable_phases=["air_handoff", "customs_clearance"],
+    applicable_products=["*"],
+    always_deferred=False,
+    description="Alternative route and carrier selection",
+))

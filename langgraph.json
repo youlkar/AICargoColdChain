@@ -1,0 +1,12 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "orchestrator":          "./orchestrator/graph.py:compiled",
+    "compliance_agent":      "./orchestrator/subgraphs/compliance_graph.py:compiled",
+    "cold_storage_agent":    "./orchestrator/subgraphs/cold_storage_graph.py:compiled",
+    "route_agent":           "./orchestrator/subgraphs/route_graph.py:compiled",
+    "financial_agent":       "./orchestrator/subgraphs/financial_graph.py:compiled",
+    "scheduling_agent":      "./orchestrator/subgraphs/scheduling_graph.py:compiled"
+  },
+  "env": ".env"
+}

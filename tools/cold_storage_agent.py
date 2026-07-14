@@ -64,15 +64,7 @@ class ColdStorageInput(BaseModel):
 
 
 def _parse_temp_range(range_str: str) -> tuple:
-    """
-    Parse a temp_range_supported string into a (low, high) float tuple.
-
-    Handles:
-      "2-8C"         -> (2.0, 8.0)
-      "15-25C"       -> (15.0, 25.0)
-      "-80C to -15C" -> (-80.0, -15.0)
-      "-80C to -20C" -> (-80.0, -20.0)
-    """
+    # Parse a temp_range_supported string into a (low, high) float tuple.
     norm = range_str.upper().strip()
 
     # Pass 1: "TO"-separated (handles negative values)
@@ -177,17 +169,26 @@ def _score_facility(
         capacity_score = min(capacity_score * 1.5, 1.0)
 
     # Sub-score: proximity
-    airport_code       = facility_record.get("airport_code", "").upper()
-    city               = facility_record.get("city", "").upper()
-    location_str       = facility_record.get("location", "").upper()
-    hint               = (location_hint or "").upper().strip()
+    #
+    # location_hint is populated upstream (orchestrator/nodes.py) either as a
+    # 3-letter IATA airport code from the shipment's currently-assigned
+    # facility, or — when no facility is assigned yet — as a non-geographic
+    # transit_phase string (e.g. "air_handoff", "customs_clearance"). The
+    # latter carries no location signal at all, so it must not be scored as a
+    # proximity mismatch (0.0); doing so previously dragged confidence below
+    # the guardrail threshold on most runs that simply hadn't picked a
+    # facility yet. We treat any hint that isn't a 3-letter airport code as
+    # "no signal" and score it neutrally.
+    airport_code = facility_record.get("airport_code", "").upper()
+    hint         = (location_hint or "").upper().strip()
+    is_airport_code_hint = bool(re.fullmatch(r"[A-Z]{3}", hint))
 
-    if hint and airport_code == hint:
+    if not hint or not is_airport_code_hint:
+        proximity_score = 0.5  # no usable location signal — neutral, not a penalty
+    elif airport_code == hint:
         proximity_score = 1.0
-    elif hint and (hint in city or city in hint or hint in location_str):
-        proximity_score = 0.5
     else:
-        proximity_score = 0.0
+        proximity_score = 0.0  # a different, known airport — genuine mismatch
 
     # Sub-score: advance notice window
     min_notice = float(facility_record.get("min_advance_notice_hours", 0))
@@ -358,7 +359,7 @@ def _execute(
     ]
 
     return {
-        # ── Preserved outer keys (notification_agent + scheduling_agent read these) ──
+        # Preserved outer keys (notification_agent + scheduling_agent read these)
         "tool":                   "cold_storage_agent",
         "status":                 status,
         "shipment_id":            shipment_id,
@@ -371,7 +372,7 @@ def _execute(
         "urgency":                urgency,
         "requires_approval":      True,
         "timestamp":              datetime.now(timezone.utc).isoformat(),
-        # ── New additive keys ──
+        # New additive keys
         "recommended_facility_id":       primary_rec.get("id", ""),
         "temp_range_supported":          primary_rec.get("temp_range_supported", ""),
         "certifications":                primary_rec.get("certifications", []),
@@ -404,3 +405,16 @@ cold_storage_tool = StructuredTool.from_function(
     ),
     args_schema=ColdStorageInput,
 )
+
+# register with dynamic tool registry
+from tools.registry import REGISTRY, ToolMetadata
+REGISTRY.register(cold_storage_tool, ToolMetadata(
+    name="cold_storage_agent",
+    wave=1,
+    category="logistics",
+    applicable_tiers=["MEDIUM", "HIGH", "CRITICAL"],
+    applicable_phases=["*"],
+    applicable_products=["*"],
+    always_deferred=False,
+    description="Backup cold-storage facility matching and scoring",
+))

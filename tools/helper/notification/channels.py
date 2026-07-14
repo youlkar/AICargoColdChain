@@ -120,18 +120,28 @@ class EmailProvider:
                 'status': NotificationStatus.FAILED,
                 'error': 'No email address provided'
             }
-        
+
         # Determine if we should use production or mock
         use_gmail = (
-            self.gmail_config is not None and 
+            self.gmail_config is not None and
             self.notification_mode == 'production'
         )
-        
+
         use_sendgrid = (
-            self.sendgrid_client is not None and 
+            self.sendgrid_client is not None and
             self.notification_mode == 'production'
         )
-        
+
+        # Demo/testing override: redirect real sends to a single inbox while
+        # keeping the original stakeholder's name/role visible in the message.
+        override_email = os.getenv('EMAIL_RECIPIENT_OVERRIDE')
+        if override_email and (use_gmail or use_sendgrid):
+            original_recipient = recipient.email
+            recipient = recipient.model_copy(update={'email': override_email})
+            content = content.model_copy(update={
+                'subject': f"[To: {recipient.name or original_recipient}] {content.subject}",
+            })
+
         if use_gmail:
             return await self._send_gmail_smtp(
                 recipient, content, severity, notification_id

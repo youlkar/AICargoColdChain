@@ -1,17 +1,6 @@
 """
 RAG-powered Compliance Agent — validates pharmaceutical shipments against
 FDA, EU GDP, WHO, and ICH regulations using semantic search + LLM.
-
-Architecture:
-  1. Audit log (immutable JSONL append — always succeeds)
-  2. Semantic search over regulatory vector store (Supabase pgvector)
-  3. LLM interpretation via Groq (llama-3.3-70b-versatile)
-  4. Structured output: compliance status, violations, disposition, citations
-
-Falls back gracefully:
-  - Vector store unavailable → hardcoded mock regulations
-  - LLM unavailable → conservative deterministic decision
-  - Both unavailable → audit-only mode (still logs)
 """
 from __future__ import annotations
 
@@ -28,26 +17,18 @@ from dotenv import load_dotenv
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from orchestrator.guardrails import _finding, check_content_safety, check_prompt_injection
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 LOG_DIR = Path(__file__).resolve().parent.parent / "audit_logs"
 
-# ---------------------------------------------------------------------------
 # RAG Compliance Agent core
-# ---------------------------------------------------------------------------
 
 class VectorComplianceAgent:
-    """
-    Vector-based compliance agent: semantic search + LLM interpretation.
-
-    Workflow:
-      1. Build search query from shipment context
-      2. Retrieve relevant regulations from vector store
-      3. LLM interprets regulations → compliance decision
-      4. Return structured output
-    """
+    # Vector-based compliance agent: semantic search + LLM interpretation.
 
     def __init__(self):
         try:
@@ -82,7 +63,7 @@ class VectorComplianceAgent:
 
         self.version = "2.0.0-rag"
 
-    # ── main entry ────────────────────────────────────────────────────
+    # main entry
     async def validate_compliance(
         self,
         shipment_id: str,
@@ -104,8 +85,15 @@ class VectorComplianceAgent:
         logger.info("Compliance search: %s", query[:120])
 
         if self.vector_enabled:
-            regs = self.vector_store.search(query=query, limit=5, similarity_threshold=0.3)
-            logger.info("Vector search returned %d regulations", len(regs))
+            try:
+                regs = self.vector_store.search(query=query, limit=5, similarity_threshold=0.3)
+                logger.info("Vector search returned %d regulations", len(regs))
+                if not regs:
+                    logger.warning("Vector search returned 0 results — using fallback regulations")
+                    regs = self._fallback_regulations(state)
+            except Exception as exc:
+                logger.warning("Vector search failed (%s) — using fallback regulations", exc)
+                regs = self._fallback_regulations(state)
         else:
             regs = self._fallback_regulations(state)
             logger.info("Using %d fallback regulations", len(regs))
@@ -128,7 +116,7 @@ class VectorComplianceAgent:
         )
         return output
 
-    # ── state builder ────────────────────────────────────────────────
+    # state builder
     @staticmethod
     def _build_state(
         shipment_id, container_id, window_id,
@@ -171,7 +159,7 @@ class VectorComplianceAgent:
             "regulatory_tags": regulatory_tags or [],
         }
 
-    # ── search query ─────────────────────────────────────────────────
+    # search query
     @staticmethod
     def _build_search_query(state: Dict) -> str:
         return (
@@ -181,7 +169,7 @@ class VectorComplianceAgent:
             f"regulatory requirements approval deviation report"
         )
 
-    # ── fallback regs ────────────────────────────────────────────────
+    # fallback regs
     @staticmethod
     def _fallback_regulations(state: Dict) -> List[Dict]:
         regs = [
@@ -218,7 +206,7 @@ class VectorComplianceAgent:
             )
         return regs
 
-    # ── LLM interpret ────────────────────────────────────────────────
+    # LLM interpret
     async def _llm_interpret(self, state: Dict, regs: List[Dict]) -> Dict:
         reg_ctx = "\n".join(
             f"REGULATION {i+1}: {r.get('regulation_id', '?')} - "
@@ -264,7 +252,7 @@ Return compliance assessment as JSON:
             logger.error("LLM compliance interpretation failed: %s", exc)
             return self._deterministic_decision(state)
 
-    # ── deterministic fallback ───────────────────────────────────────
+    # deterministic fallback
     @staticmethod
     def _deterministic_decision(state: Dict) -> Dict:
         tier = state["risk_tier"].upper()
@@ -316,7 +304,7 @@ Return compliance assessment as JSON:
             "required_actions": [],
         }
 
-    # ── output builder ───────────────────────────────────────────────
+    # output builder
     def _build_output(
         self, state: Dict, regs: List[Dict], decision: Dict
     ) -> Dict:
@@ -379,9 +367,7 @@ Return compliance assessment as JSON:
         }
 
 
-# ---------------------------------------------------------------------------
 # Singleton & async-safe runner
-# ---------------------------------------------------------------------------
 
 _compliance_agent: Optional[VectorComplianceAgent] = None
 
@@ -401,12 +387,10 @@ def _run_async(coro):
         return asyncio.run(coro)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=30)
+        return pool.submit(asyncio.run, coro).result(timeout=60)
 
 
-# ---------------------------------------------------------------------------
 # LangChain tool wrapper
-# ---------------------------------------------------------------------------
 
 class ComplianceInput(BaseModel):
     shipment_id: str
@@ -432,12 +416,30 @@ def _execute(
     details: Dict[str, Any],
     regulatory_tags: List[str] | None = None,
 ) -> dict:
-    """
-    1. Append immutable audit record (always succeeds)
-    2. Run RAG compliance validation (vector search + LLM)
-    3. Return combined result
-    """
-    # ── 1. AUDIT LOG ──
+    # Append immutable audit record (always succeeds)
+    # Run RAG compliance validation (vector search + LLM)
+
+    guardrail_finding = None
+    content_safety_findings: List[Dict[str, Any]] = []
+    clean_details = {k: v for k, v in (details or {}).items()}
+    for field_name, field_val in (details or {}).items():
+        if not isinstance(field_val, str):
+            continue
+        if check_prompt_injection(field_val):
+            logger.warning("GUARDRAIL  compliance_agent: injection pattern in details.%s", field_name)
+            clean_details[field_name] = "[BLOCKED]"
+            guardrail_finding = _finding(
+                check="prompt_injection",
+                severity="critical",
+                passed=False,
+                agent="compliance_agent",
+                message=f"Prompt injection pattern detected in details.{field_name}; field blocked.",
+                details={"field": field_name},
+            )
+        content_safety_findings.extend(check_content_safety(field_val, agent="compliance_agent"))
+    details = clean_details
+
+    # AUDIT LOG
     log_id = f"CL-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
     timestamp = datetime.now(timezone.utc).isoformat()
     audit_record = {
@@ -457,7 +459,7 @@ def _execute(
     with open(log_path, "a") as f:
         f.write(json.dumps(audit_record) + "\n")
 
-    # ── 2. RAG VALIDATION ──
+    # RAG VALIDATION
     compliance_result = None
     compliance_error = None
     try:
@@ -477,7 +479,7 @@ def _execute(
         compliance_error = str(exc)
         logger.error("Compliance validation failed: %s", exc)
 
-    # ── 3. COMBINED RESULT ──
+    # COMBINED RESULT
     result: Dict[str, Any] = {
         "tool": "compliance_agent",
         "status": "completed" if compliance_result else "audit_only",
@@ -509,6 +511,11 @@ def _execute(
             }
         )
 
+    if guardrail_finding is not None:
+        result["guardrail_finding"] = guardrail_finding
+    if content_safety_findings:
+        result["guardrail_findings"] = content_safety_findings
+
     return result
 
 
@@ -523,3 +530,16 @@ compliance_tool = StructuredTool.from_function(
     ),
     args_schema=ComplianceInput,
 )
+
+# register with dynamic tool registry
+from tools.registry import REGISTRY, ToolMetadata
+REGISTRY.register(compliance_tool, ToolMetadata(
+    name="compliance_agent",
+    wave=1,
+    category="compliance",
+    applicable_tiers=["MEDIUM", "HIGH", "CRITICAL"],
+    applicable_phases=["*"],
+    applicable_products=["*"],
+    always_deferred=False,
+    description="Regulatory compliance validation with RAG + LLM",
+))

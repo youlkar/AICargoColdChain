@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useApi, postApi, deleteApi } from '../hooks/useApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import TierBadge from './TierBadge';
+import { NotificationResult } from '../lib/toolResults';
 import {
   CheckCircle, XCircle, Shield, ArrowRight, Play, Zap, RefreshCw,
   Wifi, WifiOff, Clock, Ban, Eye, AlertTriangle, ThumbsUp,
@@ -191,6 +192,16 @@ export default function Approvals() {
             {/* Header */}
             <div className="flex items-center gap-3 flex-wrap">
               <TierBadge tier={a.risk_tier} size="lg" />
+              {(a.guardrail_findings || []).some(f => !f.passed && f.check === 'rate_limit_exceeded') && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-heading border bg-red-500/15 text-red-300 border-red-500/30">
+                  Rate Limit
+                </span>
+              )}
+              {(a.guardrail_findings || []).some(f => !f.passed && f.check === 'low_confidence') && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-heading border bg-amber-500/15 text-amber-300 border-amber-500/30">
+                  Confidence Gate
+                </span>
+              )}
               <span className="font-semibold text-white">{a.approval_id}</span>
               <span className="text-xs text-slate-500">
                 {a.window_id || a.shipment_id}{a.container_id ? ` / ${a.container_id}` : ''}
@@ -391,8 +402,8 @@ export default function Approvals() {
             {/* Executed: corrective tools were run */}
             {isExecuted && (
               <div className="pt-3 border-t border-violet-500/10">
-                <div className="glass-card-sm p-4 border border-violet-500/10">
-                  <div className="flex items-center gap-2 mb-2">
+                <div className="glass-card-sm p-4 border border-violet-500/10 space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
                     <Zap className="w-4 h-4 text-violet-400" />
                     <span className="text-xs font-bold text-violet-400">Corrective Execution Complete</span>
                     {a.executed_at && <span className="text-[10px] text-slate-600 ml-auto">{new Date(a.executed_at).toLocaleString()}</span>}
@@ -404,6 +415,20 @@ export default function Approvals() {
                       ))}
                     </div>
                   )}
+                  {(execResult?.post_approval_actions || a.post_approval_actions || []).map((pa, idx) => (
+                    <div key={idx} className="pt-2 border-t border-white/[0.04]">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${pa.success ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                        <span className="text-[11px] font-semibold text-slate-300">{pa.tool?.replace(/_/g, ' ')}</span>
+                        {!pa.success && <span className="text-[10px] text-red-400/80 ml-auto">failed</span>}
+                      </div>
+                      {pa.tool === 'notification_agent'
+                        ? <NotificationResult r={pa.result} />
+                        : (pa.result?.error
+                            ? <p className="text-[11px] text-red-400/70">{pa.result.error}</p>
+                            : null)}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

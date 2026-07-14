@@ -1,18 +1,4 @@
-"""
-Multi-provider LLM abstraction.
-
-Priority order (configurable via CARGO_LLM_PRIORITY):
-  1. "groq"     — fast cloud inference, requires GROQ_API_KEY
-  2. "ollama"   — local, free, no API key needed
-  3. "openai"   — requires OPENAI_API_KEY
-  4. "anthropic" — requires ANTHROPIC_API_KEY
-
-Set CARGO_LLM_PRIORITY to change order, e.g. "ollama,groq,openai"
-Set CARGO_LLM_ENABLED=0 to force deterministic mode (no LLM at all).
-
-Each provider is tried in order; first one that responds wins.
-"""
-
+# Multi-provider LLM abstraction. Order: groq, ollama, openai, anthropic.
 from __future__ import annotations
 
 import logging
@@ -30,6 +16,97 @@ _cached_provider: Optional[str] = None
 _cached_llm = None
 
 
+_cached_ls_client = None
+
+
+def get_langsmith_client():
+    """Return a live LangSmith Client, or None when tracing is disabled."""
+    global _cached_ls_client
+    if _cached_ls_client is not None:
+        return _cached_ls_client
+    tracing = (
+        os.environ.get("LANGSMITH_TRACING", "")
+        or os.environ.get("LANGCHAIN_TRACING_V2", "")
+    ).lower()
+    if tracing != "true":
+        return None
+    api_key = (
+        os.environ.get("LANGSMITH_API_KEY")
+        or os.environ.get("LANGCHAIN_API_KEY")
+    )
+    endpoint = (
+        os.environ.get("LANGSMITH_ENDPOINT")
+        or os.environ.get("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    )
+    if not api_key:
+        return None
+    try:
+        from langsmith import Client as LangSmithClient
+        _cached_ls_client = LangSmithClient(api_url=endpoint, api_key=api_key)
+        return _cached_ls_client
+    except Exception as e:
+        logger.warning("LangSmith client init failed: %s", e)
+        return None
+
+
+def _get_tracer_callbacks() -> list:
+    tracing = (
+        os.environ.get("LANGSMITH_TRACING", "")
+        or os.environ.get("LANGCHAIN_TRACING_V2", "")
+    ).lower()
+    if tracing != "true":
+        return []
+    api_key = (
+        os.environ.get("LANGSMITH_API_KEY")
+        or os.environ.get("LANGCHAIN_API_KEY")
+    )
+    project = (
+        os.environ.get("LANGSMITH_PROJECT")
+        or os.environ.get("LANGCHAIN_PROJECT", "default")
+    )
+    endpoint = (
+        os.environ.get("LANGSMITH_ENDPOINT")
+        or os.environ.get("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    )
+    if not api_key:
+        logger.warning("LangSmith tracing enabled but no API key found")
+        return []
+    try:
+        from langsmith import Client as LangSmithClient
+        from langchain_core.tracers import LangChainTracer
+        client = LangSmithClient(api_url=endpoint, api_key=api_key)
+        tracer = LangChainTracer(project_name=project, client=client)
+        logger.info("LangSmith tracer active (project=%s)", project)
+        return [tracer]
+    except Exception as e:
+        logger.warning("LangSmith tracer init failed: %s", e)
+        return []
+
+
+def _try_azure_openai():
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+    key = os.environ.get("AZURE_OPENAI_API_KEY", "")
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5-mini")
+    if not endpoint or not key:
+        return None
+    try:
+        from langchain_openai import ChatOpenAI
+        base_url = endpoint.rstrip("/") + "/openai/v1/"
+        llm = ChatOpenAI(
+            model=deployment,
+            api_key=key,
+            base_url=base_url,
+            temperature=0.1,
+            max_tokens=1024,
+            callbacks=_get_tracer_callbacks(),
+        )
+        logger.info("LLM provider: Azure OpenAI (%s) via %s", deployment, base_url)
+        return llm
+    except Exception as e:
+        logger.warning("Azure OpenAI init failed: %s", e)
+        return None
+
+
 def _try_groq():
     key = os.environ.get("GROQ_API_KEY", "")
     if not key or key == "your-key-here":
@@ -37,7 +114,13 @@ def _try_groq():
     model = os.environ.get("CARGO_GROQ_MODEL", "llama-3.3-70b-versatile")
     try:
         from langchain_groq import ChatGroq
-        llm = ChatGroq(model=model, temperature=0.1, max_tokens=1024, api_key=key)
+        llm = ChatGroq(
+            model=model,
+            temperature=0.1,
+            max_tokens=1024,
+            api_key=key,
+            callbacks=_get_tracer_callbacks(),
+        )
         logger.info("LLM provider: Groq (%s)", model)
         return llm
     except Exception as e:
@@ -90,6 +173,7 @@ def _try_anthropic():
 
 
 _PROVIDERS = {
+    "azure_openai": _try_azure_openai,
     "groq": _try_groq,
     "ollama": _try_ollama,
     "openai": _try_openai,
@@ -98,10 +182,7 @@ _PROVIDERS = {
 
 
 def get_llm(force_refresh: bool = False):
-    """
-    Return the best available LLM, trying providers in priority order.
-    Returns None if no provider is available (triggers deterministic fallback).
-    """
+    # Return the best available LLM, trying providers in priority order.
     global _cached_provider, _cached_llm
 
     if os.environ.get("CARGO_LLM_ENABLED", "1") == "0":
@@ -112,7 +193,7 @@ def get_llm(force_refresh: bool = False):
     if _cached_llm is not None and not force_refresh:
         return _cached_llm
 
-    priority = os.environ.get("CARGO_LLM_PRIORITY", "groq,ollama,openai,anthropic").split(",")
+    priority = os.environ.get("CARGO_LLM_PRIORITY", "groq").split(",")
 
     for name in priority:
         name = name.strip().lower()
@@ -133,7 +214,7 @@ def get_llm(force_refresh: bool = False):
 
 
 def get_provider_name() -> str:
-    """Return the active provider name, or 'deterministic'."""
+    # Return the active provider name, or 'deterministic'.
     if _cached_provider:
         return _cached_provider
     if get_llm() is not None:
@@ -141,9 +222,60 @@ def get_provider_name() -> str:
     return "deterministic"
 
 
+_DEFAULT_MODEL_PRICING = {
+    "azure_openai:gpt-4o":            {"input": 2.50, "output": 10.0},
+    "azure_openai:gpt-4o-mini":       {"input": 0.15, "output": 0.60},
+    "groq:llama-3.3-70b-versatile":   {"input": 0.59, "output": 0.79},
+    "groq:llama-3.1-8b-instant":      {"input": 0.05, "output": 0.08},
+    "ollama:qwen2.5:7b":              {"input": 0.0,  "output": 0.0},
+    "openai:gpt-4o-mini":             {"input": 0.15, "output": 0.60},
+    "openai:gpt-4o":                  {"input": 2.50, "output": 10.0},
+    "anthropic:claude-3-5-haiku-latest": {"input": 0.80, "output": 4.0},
+    "anthropic:claude-3-5-sonnet-latest": {"input": 3.0, "output": 15.0},
+}
+
+
+def _load_model_pricing() -> dict:
+    # Load model pricing from CARGO_MODEL_PRICING env var (JSON) or defaults.
+    raw = os.environ.get("CARGO_MODEL_PRICING", "")
+    if raw:
+        try:
+            import json
+            return json.loads(raw)
+        except Exception:
+            logger.warning("CARGO_MODEL_PRICING is not valid JSON; using defaults")
+    return _DEFAULT_MODEL_PRICING
+
+
+CARGO_MODEL_PRICING = _load_model_pricing()
+
+
+def track_usage(node_name: str, response) -> dict:
+    # Extract token usage from `response.usage_metadata` and compute cost.
+    try:
+        meta = getattr(response, "usage_metadata", None) or {}
+        input_tokens = int(meta.get("input_tokens", 0) or meta.get("prompt_tokens", 0))
+        output_tokens = int(meta.get("output_tokens", 0) or meta.get("completion_tokens", 0))
+        total_tokens = input_tokens + output_tokens
+
+        provider = get_provider_name()
+        model = get_model_name()
+        key = f"{provider}:{model}"
+        pricing = CARGO_MODEL_PRICING.get(key, {"input": 0.0, "output": 0.0})
+        cost_usd = (
+            input_tokens * pricing["input"] / 1_000_000
+            + output_tokens * pricing["output"] / 1_000_000
+        )
+        return {node_name: {"tokens": total_tokens, "cost_usd": round(cost_usd, 8)}}
+    except Exception as exc:
+        logger.debug("track_usage failed (non-fatal): %s", exc)
+        return {node_name: {"tokens": 0, "cost_usd": 0.0}}
+
+
 def get_model_name() -> str:
-    """Return the active model name."""
     provider = get_provider_name()
+    if provider == "azure_openai":
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
     if provider == "groq":
         return os.environ.get("CARGO_GROQ_MODEL", "llama-3.3-70b-versatile")
     if provider == "ollama":

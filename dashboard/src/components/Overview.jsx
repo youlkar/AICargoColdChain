@@ -1,45 +1,39 @@
+import { useState } from 'react';
+import { useTheme } from '../lib/ThemeContext';
 import { useApi } from '../hooks/useApi';
-import { Link } from 'react-router-dom';
-import {
-  PieChart, Pie, Cell, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-} from 'recharts';
-import { AlertTriangle, Thermometer, Package, Activity, TrendingUp, ShieldCheck } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { AlertTriangle, Thermometer, Activity, ClipboardCheck, CheckCircle2, Search, Bot, ShieldCheck, ChevronRight, DollarSign, Boxes } from 'lucide-react';
 import TierBadge from './TierBadge';
+import { TIER_COLORS, TIER_ORDER } from '../lib/colors';
+import ColdChainPulse from './shared/ColdChainPulse';
+import { StatCardSkeleton, ChartSkeleton, ErrorState, EmptyState } from './shared/States';
+import { getAgentHeadline } from '../lib/agentSummaries';
+import { timeAgo, formatUsdCompact } from '../lib/format';
+import { safeStr } from '../lib/toolResults';
+import KpiCard from './shared/KpiCard';
 
-const TIER_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#22c55e' };
-const TIER_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-
-const STAT_CONFIGS = [
-  { key: 'windows', icon: Package, label: 'Total Windows', gradient: 'from-cyan-500 to-blue-600', bgGlow: 'shadow-cyan-500/10' },
-  { key: 'shipments', icon: Activity, label: 'Active Shipments', gradient: 'from-violet-500 to-purple-600', bgGlow: 'shadow-violet-500/10' },
-  { key: 'critical', icon: AlertTriangle, label: 'Critical Alerts', gradient: 'from-red-500 to-rose-600', bgGlow: 'shadow-red-500/10' },
-  { key: 'high', icon: Thermometer, label: 'High Risk', gradient: 'from-orange-500 to-amber-600', bgGlow: 'shadow-orange-500/10' },
-];
-
-function StatCard({ icon: Icon, label, value, gradient, bgGlow, delay }) {
-  return (
-    <div className={`glass-card p-5 animate-slide-up shadow-lg ${bgGlow}`} style={{ animationDelay: `${delay}ms` }}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">{label}</p>
-          <p className="text-3xl font-bold mt-1.5 text-white tabular-nums">{value}</p>
-        </div>
-        <div className={`rounded-xl p-2.5 bg-gradient-to-br ${gradient}`}>
-          <Icon className="w-5 h-5 text-white" />
-        </div>
-      </div>
-    </div>
-  );
-}
+// Short display labels for agent feed chips — matching mockup aesthetic
+const AGENT_FEED_CHIPS = {
+  triage_agent:       { label: 'RISK',       bg: 'rgba(239,68,68,0.15)',   color: '#f87171' },
+  risk_agent:         { label: 'RISK',       bg: 'rgba(239,68,68,0.15)',   color: '#f87171' },
+  compliance_agent:   { label: 'COMPLIANCE', bg: 'rgba(139,92,246,0.15)',  color: '#a78bfa' },
+  notification_agent: { label: 'NOTIFY',     bg: 'rgba(34,211,238,0.15)',  color: '#22d3ee' },
+  approval_workflow:  { label: 'ESCALATION', bg: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
+  cold_storage_agent: { label: 'STORAGE',    bg: 'rgba(56,189,248,0.15)',  color: '#38bdf8' },
+  scheduling_agent:   { label: 'SCHEDULE',   bg: 'rgba(99,102,241,0.15)',  color: '#818cf8' },
+  route_agent:        { label: 'ROUTE',      bg: 'rgba(34,211,238,0.15)',  color: '#22d3ee' },
+  insurance_agent:    { label: 'INSURE',     bg: 'rgba(52,211,153,0.15)',  color: '#34d399' },
+  _default:           { label: 'AGENT',      bg: 'rgba(148,163,184,0.12)', color: '#94a3b8' },
+};
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="glass-card-sm px-3 py-2 text-xs">
-      <p className="font-semibold text-white">{d.shipment || d.name}</p>
-      <p className="text-slate-400 mt-0.5">
+    <div className="panel-sm px-3 py-2 text-xs">
+      <p className="font-semibold font-heading text-[var(--text-primary)]">{d.shipment || d.name}</p>
+      <p className="text-[var(--text-secondary-2)] mt-0.5 font-data">
         {d.score != null ? `Score: ${d.score.toFixed(4)}` : `Count: ${d.value}`}
       </p>
     </div>
@@ -47,132 +41,413 @@ function CustomTooltip({ active, payload }) {
 }
 
 export default function Overview() {
-  const { data, loading, error } = useApi('/risk/overview');
+  const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
+  const [rangeHours, setRangeHours] = useState(24);
+  const { data, loading, error, refetch } = useApi(
+    `/risk/overview${rangeHours ? `?hours=${rangeHours}` : ''}`, [rangeHours]
+  );
+  const { data: history } = useApi('/orchestrator/history?limit=200');
+  const { data: pendingApprovals } = useApi('/approvals/pending');
+  const topShipment = data?.top_risky_shipments?.[0];
+  const topShipmentId = topShipment?.shipment_id;
+  const { data: pulseWindows } = useApi(`/shipments/${topShipmentId || 'none'}/windows`);
 
-  if (loading) return (
-    <div className="p-8 flex items-center gap-3 text-slate-500">
-      <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-      Loading risk overview...
+  const [search, setSearch] = useState('');
+  const [tierFilter, setTierFilter] = useState('ALL');
+  const [productFilter, setProductFilter] = useState('ALL');
+
+  if (error) return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <ErrorState message={error} onRetry={refetch} />
     </div>
   );
-  if (error) return <div className="p-8 text-red-400">Error: {error}</div>;
+
+  // Highest-priority pending approval (CRITICAL first, else first item)
+  const topApproval = (pendingApprovals || []).find(a => a.risk_tier === 'CRITICAL') || (pendingApprovals || [])[0] || null;
+
+  if (loading || !data) {
+    return (
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        <div className="h-8 w-64 rounded bg-slate-500/15 animate-pulse" />
+        <div className="grid grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)}
+        </div>
+        <ChartSkeleton height={140} />
+        <div className="grid grid-cols-2 gap-6">
+          <ChartSkeleton />
+          <ChartSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   const pieData = TIER_ORDER.filter(t => data.tier_counts[t]).map(t => ({ name: t, value: data.tier_counts[t] }));
   const totalWindows = pieData.reduce((s, d) => s + d.value, 0);
-  const barData = (data.top_risky_shipments || []).slice(0, 8).map(s => ({
-    shipment: s.shipment_id,
-    score: s.max_fused_score,
-    tier: s.latest_risk_tier,
-  }));
+
+  const cutoff = rangeHours > 0 ? Date.now() - rangeHours * 3600 * 1000 : 0;
+  const recentActions = (history || [])
+    .filter(d => !cutoff || new Date(d.timestamp || 0).getTime() >= cutoff)
+    .flatMap(d => (Array.isArray(d.actions_taken) ? d.actions_taken : [])
+      .filter(a => a && typeof a === 'object')
+      .map(a => ({ action: a, timestamp: d.timestamp, windowId: d.window_id || d._window_id, shipmentId: d.shipment_id })))
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+    .slice(0, 6);
+
+  const allProducts = [...new Set((data.top_risky_shipments || []).flatMap(s => s.products))].sort();
+  const filteredShipments = (data.top_risky_shipments || []).filter(s => {
+    if (tierFilter !== 'ALL' && s.latest_risk_tier !== tierFilter) return false;
+    if (productFilter !== 'ALL' && !s.products.includes(productFilter)) return false;
+    if (search.trim() && !s.shipment_id.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    return true;
+  });
+
+  const lastUpdated = (history && history[0]?.timestamp) ? timeAgo(history[0].timestamp) : 'just now';
   const statValues = {
-    windows: data.total_windows.toLocaleString(),
     shipments: data.total_shipments,
+    escalated: data.escalated_shipments || 0,
+    monitored: data.monitored_shipments || 0,
     critical: data.tier_counts.CRITICAL || 0,
-    high: data.tier_counts.HIGH || 0,
+    valueAtRisk: formatUsdCompact(data.total_value_at_risk_usd),
+    pendingApprovals: (pendingApprovals || []).length,
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="p-6 max-w-7xl mx-auto space-y-5">
+
+      {/* Section 1 — Page header */}
+      <div className="flex items-center justify-between flex-wrap gap-3 ">
         <div>
-          <h1 className="text-2xl font-bold text-white">Risk Overview</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Pharmaceutical cold-chain monitoring dashboard</p>
+          <h1 className="text-2xl font-bold font-heading" style={{ color: 'var(--text-primary)' }}>Cold-Chain Overview</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>
+            {data.total_shipments} active shipments &middot; last updated {lastUpdated}
+          </p>
         </div>
-        <div className="flex items-center gap-2 glass-card-sm px-3 py-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs text-emerald-400 font-medium">GDP Compliant</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-4 gap-4">
-        {STAT_CONFIGS.map((cfg, i) => {
-          const { key, ...rest } = cfg;
-          return <StatCard key={key} {...rest} value={statValues[key]} delay={i * 80} />;
-        })}
-      </div>
-
-      <div className="grid grid-cols-2 gap-6">
-        <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '320ms' }}>
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Tier Distribution</h2>
-          <p className="text-[11px] text-slate-500 mb-4">Risk classification breakdown across all windows</p>
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                innerRadius={65} outerRadius={100} paddingAngle={3} strokeWidth={0}>
-                {pieData.map(d => (
-                  <Cell key={d.name} fill={TIER_COLORS[d.name]} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <text x="50%" y="46%" textAnchor="middle" className="fill-white text-2xl font-bold">{totalWindows}</text>
-              <text x="50%" y="56%" textAnchor="middle" className="fill-slate-400 text-[11px]">total</text>
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-5 mt-3">
-            {pieData.map(d => (
-              <span key={d.name} className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: TIER_COLORS[d.name] }} />
-                {d.name} <span className="text-slate-500 font-mono">{d.value}</span>
-              </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: 'var(--bg-page)' }}>
+            {[[24, '24h'], [168, '7d'], [0, 'All']].map(([h, label]) => (
+              <button key={h} onClick={() => setRangeHours(h)}
+                className="px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition"
+                style={rangeHours === h
+                  ? { backgroundColor: 'rgba(34,211,238,0.10)', color: 'var(--accent-cyan)' }
+                  : { color: 'var(--text-secondary-2)' }}>
+                {label}
+              </button>
             ))}
           </div>
-        </div>
-
-        <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '400ms' }}>
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold text-slate-300">Top Risky Shipments</h2>
-            <TrendingUp className="w-4 h-4 text-slate-500" />
+          <div className="flex items-center gap-2 panel-sm px-3 py-2">
+            <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent-emerald)' }} />
+            <span className="text-xs font-heading font-medium" style={{ color: 'var(--accent-emerald)' }}>GDP Compliant</span>
           </div>
-          <p className="text-[11px] text-slate-500 mb-4">Highest fused risk scores across active shipments</p>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={barData} layout="vertical" margin={{ left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.08)" />
-              <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
-              <YAxis type="category" dataKey="shipment" tick={{ fontSize: 10, fill: '#94a3b8' }} width={60} stroke="transparent" />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="score" radius={[0, 6, 6, 0]}>
-                {barData.map((d, i) => (
-                  <Cell key={i} fill={TIER_COLORS[d.tier] || '#64748b'} fillOpacity={0.85} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '480ms' }}>
-        <h2 className="text-sm font-semibold text-slate-300 mb-4">Shipment Risk Summary</h2>
+      {/* Section 2 — Hero banner */}
+      <div
+        className="relative overflow-hidden rounded-2xl p-5"
+        style={isLight ? {
+          background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 60%, #f0fdf4 100%)',
+          border: '1px solid rgba(14,116,144,0.18)',
+        } : {
+          background: 'linear-gradient(135deg, #0e3a4f 0%, #0a2d3d 50%, #0d1f35 100%)',
+          border: '1px solid rgba(34,211,238,0.15)',
+        }}
+      >
+        {/* glow blob */}
+        <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 rounded-full"
+          style={{ background: isLight
+            ? 'radial-gradient(circle, rgba(14,116,144,0.06) 0%, transparent 70%)'
+            : 'radial-gradient(circle, rgba(34,211,238,0.08) 0%, transparent 70%)' }} />
+        <div className="grid grid-cols-4"
+          style={{ borderColor: isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)' }}>
+          {/* Col 1 — Fleet Size */}
+          <div className="px-6 first:pl-0" style={{ borderRight: `1px solid ${isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)'}` }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.7)' }}>Fleet Size</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight"
+              style={{ color: isLight ? '#0f172a' : '#ffffff' }}>{statValues.shipments}</p>
+            <p className="text-xs mt-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.6)' }}>Active shipments in transit</p>
+          </div>
+
+          {/* Col 2 — Value at Risk */}
+          <div className="px-6" style={{ borderRight: `1px solid ${isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)'}` }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.7)' }}>Value at Risk</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight"
+              style={{ color: isLight ? '#0f172a' : '#ffffff' }}>{statValues.valueAtRisk}</p>
+            <p className="text-xs mt-1 font-data"
+              style={{ color: statValues.escalated > 0 ? (isLight ? '#dc2626' : '#fca5a5') : (isLight ? '#64748b' : 'rgba(148,163,184,0.6)') }}>
+              {statValues.escalated} escalated
+            </p>
+          </div>
+
+          {/* Col 3 — Escalated Windows */}
+          <div className="px-6" style={{ borderRight: `1px solid ${isLight ? 'rgba(14,116,144,0.12)' : 'rgba(255,255,255,0.08)'}` }}>
+            <p className="text-[11px] font-heading font-medium uppercase tracking-wider mb-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.7)' }}>Escalated Windows</p>
+            <p className="text-[28px] font-extrabold font-data leading-tight"
+              style={{ color: totalWindows > 0 ? (isLight ? '#b45309' : '#fbbf24') : (isLight ? '#0f172a' : 'rgba(255,255,255,0.9)') }}>
+              {totalWindows}
+            </p>
+            <p className="text-xs mt-1"
+              style={{ color: isLight ? '#64748b' : 'rgba(148,163,184,0.6)' }}>across all risk tiers</p>
+          </div>
+
+          {/* Col 4 — Action buttons */}
+          <div className="px-6 flex flex-col gap-2 justify-center">
+            {statValues.pendingApprovals > 0 && (
+              <Link
+                to="/approvals"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold font-heading transition hover:opacity-90"
+                style={{ backgroundColor: 'var(--accent-red)', color: '#fff' }}
+              >
+                Review {statValues.pendingApprovals} Approval{statValues.pendingApprovals === 1 ? '' : 's'}
+              </Link>
+            )}
+            <Link
+              to="/agent"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold font-heading transition hover:opacity-90"
+              style={{ backgroundColor: isLight ? '#0e7490' : 'var(--accent-cyan)', color: '#ffffff' }}
+            >
+              Run Orchestrator
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 3 — Alert / all-clear banner */}
+      {topApproval ? (
+        <div className="panel p-4 flex items-center justify-between gap-4 flex-wrap " style={{ borderLeft: '4px solid var(--accent-red)' }}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in oklab, var(--accent-red) 15%, transparent)' }}>
+              <AlertTriangle className="w-4.5 h-4.5" style={{ color: 'var(--accent-red)' }} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold font-heading text-[var(--text-primary)]">
+                {pendingApprovals.length} shipment{pendingApprovals.length === 1 ? '' : 's'} need{pendingApprovals.length === 1 ? 's' : ''} attention
+              </p>
+              <p className="text-xs text-[var(--text-secondary-2)] mt-0.5 truncate">
+                {topApproval.shipment_id} {safeStr(topApproval.window_id)} &middot; {topApproval.action_description}
+              </p>
+            </div>
+          </div>
+          <Link to="/approvals" className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold font-heading shrink-0"
+            style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-page)' }}>
+            Review &rarr;
+          </Link>
+        </div>
+      ) : (
+        <div className="panel p-4 flex items-center gap-3 ">
+          <CheckCircle2 className="w-5 h-5" style={{ color: 'var(--accent-emerald)' }} />
+          <p className="text-sm font-heading text-[var(--text-secondary-2)]">No shipments need attention right now.</p>
+        </div>
+      )}
+
+      {/* Section 4 — KPI cards */}
+      <div className="grid grid-cols-4 gap-4 ">
+        <KpiCard
+          icon={Boxes}
+          variant="blue"
+          value={statValues.shipments}
+          label="Active Shipments"
+          trend={statValues.escalated > 0 ? `${statValues.escalated} escalated` : undefined}
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          variant="purple"
+          value={String(statValues.critical).padStart(3, '0')}
+          label="Critical Alerts"
+          trend={statValues.critical > 0 ? `${statValues.critical} active` : undefined}
+        />
+        <KpiCard
+          icon={DollarSign}
+          variant="amber"
+          value={statValues.valueAtRisk}
+          label="Value at Risk"
+        />
+        <KpiCard
+          icon={ClipboardCheck}
+          variant="teal"
+          value={statValues.pendingApprovals}
+          label="Pending Approvals"
+          trend={statValues.pendingApprovals > 0 ? `${statValues.pendingApprovals} pending` : undefined}
+        />
+      </div>
+
+      {/* Section 5 — Three-column row */}
+      <div className="grid gap-4 " style={{ gridTemplateColumns: '1fr 2.4fr 1fr' }}>
+
+        {/* Left — Tier Distribution */}
+        <div className="panel overflow-hidden">
+          <div className="px-[18px] pt-[14px] pb-[12px]" style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
+            <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Tier Distribution</h2>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Escalated windows only</p>
+          </div>
+          <div className="px-[18px] py-3">
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                  innerRadius={46} outerRadius={72} paddingAngle={3} strokeWidth={0}>
+                  {pieData.map(d => (
+                    <Cell key={d.name} fill={TIER_COLORS[d.name]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <text x="50%" y="46%" textAnchor="middle" className="fill-[var(--text-primary)] text-xl font-bold font-data">{totalWindows}</text>
+                <text x="50%" y="58%" textAnchor="middle" className="fill-[var(--text-secondary-2)] text-[10px]">escalated</text>
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Vertical legend matching mockup */}
+            <div className="space-y-2 mt-1 px-2">
+              {pieData.map(d => (
+                <div key={d.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-secondary-2)' }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TIER_COLORS[d.name] }} />
+                    {d.name.charAt(0) + d.name.slice(1).toLowerCase()}
+                  </div>
+                  <span className="text-[12px] font-bold font-data" style={{ color: TIER_COLORS[d.name] }}>{d.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Center — ColdChainPulse */}
+        <ColdChainPulse
+          shipmentId={topShipmentId}
+          windows={pulseWindows}
+          riskTier={topShipment?.latest_risk_tier}
+          score={topShipment?.max_fused_score}
+          valueAtRisk={topShipment?.value_at_risk_usd}
+        />
+
+        {/* Right — Live Agent Activity */}
+        <div className="panel overflow-hidden">
+          <div className="flex items-center justify-between px-[18px] pt-[14px] pb-[12px]"
+            style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
+            <div>
+              <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Live Agent Activity</h2>
+              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Last 6 actions</p>
+            </div>
+            <Link to="/agent" className="text-[11px] font-semibold font-heading hover:underline" style={{ color: 'var(--accent-cyan)' }}>View all →</Link>
+          </div>
+          <div className="px-[18px]">
+            {recentActions.length === 0 ? (
+              <div className="flex items-center gap-2 py-6">
+                <Bot className="w-4 h-4 shrink-0" style={{ color: 'rgba(148,163,184,0.3)' }} />
+                <p className="text-[11.5px]" style={{ color: 'rgba(148,163,184,0.4)' }}>
+                  No agent runs yet — orchestrate a pipeline to see actions here.
+                </p>
+              </div>
+            ) : (
+              recentActions.slice(0, 6).map((item, i, arr) => {
+                const headline = getAgentHeadline(item.action.tool, item.action);
+                const chip = AGENT_FEED_CHIPS[item.action.tool] || AGENT_FEED_CHIPS._default;
+                return (
+                  <div key={i} className="flex items-center gap-2.5 py-[8px]"
+                    style={i < arr.length - 1 ? { borderBottom: '1px solid rgba(148,163,184,0.06)' } : {}}>
+                    <span className="shrink-0 rounded-[5px] px-2 py-[3px] text-[10px] font-bold"
+                      style={{ background: chip.bg, color: chip.color, letterSpacing: '0.06em' }}>
+                      {chip.label}
+                    </span>
+                    <span className="text-[11.5px] truncate flex-1" style={{ color: 'var(--text-secondary-2)' }}>
+                      {headline.title}
+                    </span>
+                    <span className="text-[10px] font-mono shrink-0" style={{ color: 'rgba(148,163,184,0.35)' }}>
+                      {timeAgo(item.timestamp)}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Section 6 — Shipment Risk Table */}
+      <div className="panel overflow-hidden">
+        <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-4"
+          style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
+          <div>
+            <h2 className="text-[12.5px] font-bold font-heading text-[var(--text-primary)]">Shipment Risk Summary</h2>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary-2)' }}>Click a row for shipment details</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 panel-sm px-2.5 py-1.5">
+              <Search className="w-3.5 h-3.5 text-[var(--text-secondary-2)]" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search shipment ID"
+                className="bg-transparent outline-none text-xs font-heading text-[var(--text-primary)] placeholder-[var(--text-secondary-2)] w-32" />
+            </div>
+            <select value={tierFilter} onChange={e => setTierFilter(e.target.value)}
+              className="panel-sm px-2.5 py-1.5 text-xs font-heading text-[var(--text-primary)] bg-transparent outline-none cursor-pointer">
+              <option value="ALL">All tiers</option>
+              {TIER_ORDER.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={productFilter} onChange={e => setProductFilter(e.target.value)}
+              className="panel-sm px-2.5 py-1.5 text-xs font-heading text-[var(--text-primary)] bg-transparent outline-none cursor-pointer">
+              <option value="ALL">All products</option>
+              {allProducts.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/[0.06] text-left text-[11px] text-slate-500 uppercase tracking-wider">
-                <th className="pb-3 pr-4 font-medium">Shipment</th>
-                <th className="pb-3 pr-4 font-medium">Containers</th>
-                <th className="pb-3 pr-4 font-medium">Products</th>
-                <th className="pb-3 pr-4 font-medium">Windows</th>
-                <th className="pb-3 pr-4 font-medium">Latest Tier</th>
-                <th className="pb-3 pr-4 font-medium">Max Score</th>
-                <th className="pb-3 pr-4 font-medium">% Critical</th>
+              <tr className="text-left text-[11px] text-[var(--text-secondary-2)] uppercase tracking-wider font-heading"
+                style={{ background: 'rgba(148,163,184,0.02)', borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
+                <th className="px-3.5 py-2.5 font-medium first:pl-5">Shipment</th>
+                <th className="px-3.5 py-2.5 font-medium">Containers</th>
+                <th className="px-3.5 py-2.5 font-medium">Products</th>
+                <th className="px-3.5 py-2.5 font-medium">Windows</th>
+                <th className="px-3.5 py-2.5 font-medium">Latest Tier</th>
+                <th className="px-3.5 py-2.5 font-medium">Max Score</th>
+                <th className="px-3.5 py-2.5 font-medium text-right">% Critical</th>
+                <th className="px-3.5 py-2.5 font-medium text-right pr-5">Value at Risk</th>
               </tr>
             </thead>
             <tbody>
-              {(data.top_risky_shipments || []).slice(0, 10).map((s, i) => (
+              {filteredShipments.length === 0 ? (
+                <tr><td colSpan={8}>
+                  <EmptyState icon={Search} title="No shipments match your filters"
+                    description="Try a different shipment ID, tier, or product." />
+                </td></tr>
+              ) : filteredShipments.slice(0, 10).map((s, i) => (
                 <tr key={s.shipment_id}
-                    className="border-b border-white/[0.04] hover:bg-white/[0.02] transition animate-fade-in"
-                    style={{ animationDelay: `${560 + i * 40}ms` }}>
-                  <td className="py-3 pr-4">
-                    <Link to={`/shipments/${s.shipment_id}`} className="text-cyan-400 hover:text-cyan-300 font-medium transition">
+                    onClick={() => navigate(`/shipments/${s.shipment_id}`)}
+                    className="hover:bg-white/[0.03] transition animate-fade-in cursor-pointer"
+                    style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
+                    style={{ animationDelay: `${760 + i * 40}ms` }}>
+                  <td className="py-2.5 px-3.5 first:pl-5">
+                    <span className="font-medium font-data flex items-center gap-1.5" style={{ color: 'var(--accent-cyan)' }}>
                       {s.shipment_id}
-                    </Link>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-50" />
+                    </span>
                   </td>
-                  <td className="py-3 pr-4 text-slate-400">{s.containers.join(', ')}</td>
-                  <td className="py-3 pr-4 text-slate-400">{s.products.join(', ')}</td>
-                  <td className="py-3 pr-4 text-slate-300">{s.total_windows}</td>
-                  <td className="py-3 pr-4"><TierBadge tier={s.latest_risk_tier} /></td>
-                  <td className="py-3 pr-4 font-mono text-white">{s.max_fused_score.toFixed(4)}</td>
-                  <td className="py-3 pr-4">
-                    <span className={`font-mono ${s.pct_critical > 30 ? 'text-red-400' : 'text-slate-400'}`}>
+                  <td className="py-2.5 px-3.5 text-[var(--text-secondary-2)]">{s.containers.join(', ')}</td>
+                  <td className="py-2.5 px-3.5 text-[var(--text-secondary-2)]">{s.products.join(', ')}</td>
+                  <td className="py-2.5 px-3.5 text-[var(--text-primary)] font-data">{s.total_windows}</td>
+                  <td className="py-2.5 px-3.5 first:pl-5"><TierBadge tier={s.latest_risk_tier} /></td>
+                  <td className="py-2.5 px-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 max-w-[64px] h-1.5 rounded-full" style={{ backgroundColor: 'var(--card-border)' }}>
+                        <div className="h-1.5 rounded-full" style={{
+                          width: `${Math.min(s.max_fused_score * 100, 100)}%`,
+                          backgroundColor: TIER_COLORS[s.latest_risk_tier] || 'var(--text-secondary-2)',
+                        }} />
+                      </div>
+                      <span className="font-data text-[var(--text-primary)] shrink-0">{s.max_fused_score.toFixed(4)}</span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3.5 text-right">
+                    <span className="font-data" style={{ color: s.pct_critical > 30 ? 'var(--accent-red)' : 'var(--text-secondary-2)' }}>
                       {s.pct_critical}%
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3.5 text-right">
+                    <span className="font-data font-semibold" style={{ color: 'var(--accent-amber)' }}>
+                      {formatUsdCompact(s.value_at_risk_usd)}
                     </span>
                   </td>
                 </tr>
@@ -181,6 +456,7 @@ export default function Overview() {
           </table>
         </div>
       </div>
+
     </div>
   );
 }
