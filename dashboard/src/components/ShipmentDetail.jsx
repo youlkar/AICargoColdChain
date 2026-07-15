@@ -1,23 +1,60 @@
 import { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useApi } from '../hooks/useApi';
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, ReferenceLine, BarChart, Bar, Cell, PieChart, Pie,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { ArrowLeft, Thermometer, TrendingUp, Package, AlertTriangle } from 'lucide-react';
-import TierBadge from './TierBadge';
-import { TIER_COLORS } from '../lib/colors';
+import { ArrowLeft, Thermometer, TrendingUp } from 'lucide-react';
+import { useApi } from '../hooks/useApi';
+import { humanize } from '../lib/toolResults';
+import './shipments-v2.css';
+
+const TIER_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const TIER_STYLE = {
+  CRITICAL: { bg: 'var(--ship-red-soft)', color: 'var(--ship-red)' },
+  HIGH:     { bg: 'var(--ship-amber-soft)', color: 'var(--ship-amber)' },
+  MEDIUM:   { bg: 'var(--ship-yellow-soft)', color: 'var(--ship-yellow)' },
+  LOW:      { bg: 'var(--ship-green-soft)', color: 'var(--ship-green)' },
+};
+
+function TierBadgeV2({ tier }) {
+  const s = TIER_STYLE[tier] || TIER_STYLE.LOW;
+  return <span className="ship-tier-lg" style={{ background: s.bg, color: s.color }}>{tier}</span>;
+}
+
+function TierDonut({ tierCounts }) {
+  const total = TIER_ORDER.reduce((s, t) => s + (tierCounts[t] || 0), 0);
+  const c = 2 * Math.PI * 20;
+
+  // Precompute each segment's dash length + cumulative offset without
+  // mutating a variable during render (offsets derived functionally).
+  const arcs = TIER_ORDER.filter(t => tierCounts[t] > 0).reduce((acc, t) => {
+    const pct = total > 0 ? (tierCounts[t] / total) * 100 : 0;
+    const dash = (pct / 100) * c;
+    const offset = acc.length ? acc[acc.length - 1].offset + acc[acc.length - 1].dash : 0;
+    return [...acc, { tier: t, dash, offset }];
+  }, []);
+
+  return (
+    <svg width="52" height="52" viewBox="0 0 52 52">
+      <circle cx="26" cy="26" r="20" fill="none" stroke="var(--ship-track)" strokeWidth="7" />
+      {arcs.map(a => (
+        <circle key={a.tier} cx="26" cy="26" r="20" fill="none" stroke={TIER_STYLE[a.tier].color} strokeWidth="7"
+          strokeDasharray={`${a.dash} ${c - a.dash}`} strokeDashoffset={-a.offset}
+          transform="rotate(-90 26 26)" strokeLinecap="round" />
+      ))}
+    </svg>
+  );
+}
 
 function ChartTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="glass-card-sm px-3 py-2 text-xs shadow-xl">
-      <p className="font-semibold text-white">{d.wid}</p>
-      <p className="text-slate-400">Phase: {d.phase}</p>
-      {d.temp != null && <p className="text-cyan-400">Temp: {d.temp.toFixed(2)}°C</p>}
-      {d.final != null && <p className="text-violet-400">Score: {d.final.toFixed(4)} ({d.tier})</p>}
+    <div style={{ background: 'var(--ship-panel)', border: '1px solid var(--ship-panel-border)', borderRadius: 10, padding: '8px 12px', boxShadow: 'var(--ship-shadow)' }}>
+      <p style={{ fontFamily: 'Charter,Georgia,serif', fontWeight: 600, fontSize: 12, color: 'var(--ship-ink-0)', margin: 0 }}>{d.wid}</p>
+      <p style={{ fontSize: 11, color: 'var(--ship-ink-2)', margin: '2px 0 0' }}>Phase: {humanize(d.phase)}</p>
+      {d.temp != null && <p style={{ fontSize: 11, color: 'var(--ship-blue)', margin: '2px 0 0' }}>Temp: {d.temp.toFixed(2)}°C</p>}
+      {d.final != null && <p style={{ fontSize: 11, color: TIER_STYLE[d.tier]?.color, margin: '2px 0 0' }}>Score: {d.final.toFixed(4)} ({d.tier})</p>}
     </div>
   );
 }
@@ -48,12 +85,11 @@ export default function ShipmentDetail() {
   }, [windows, activeContainer]);
 
   if (loading) return (
-    <div className="p-8 flex items-center gap-3 text-slate-500">
-      <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-      Loading shipment...
-    </div>
+    <div className="ship"><p style={{ color: 'var(--ship-ink-2)' }}>Loading shipment…</p></div>
   );
-  if (error) return <div className="p-8 text-red-400">Error: {error}</div>;
+  if (error) return (
+    <div className="ship"><p style={{ color: 'var(--ship-red)' }}>Error: {error}</p></div>
+  );
 
   const chartData = displayWindows.map((w, i) => ({
     idx: i, temp: w.avg_temp_c, final: w.final_score,
@@ -63,52 +99,48 @@ export default function ShipmentDetail() {
 
   const tierCounts = {};
   for (const w of displayWindows) tierCounts[w.risk_tier] = (tierCounts[w.risk_tier] || 0) + 1;
-  const pieData = Object.entries(tierCounts).map(([k, v]) => ({ name: k, value: v }));
 
   const phaseCounts = {};
   for (const w of displayWindows) {
     const p = w.transit_phase || 'unknown';
-    if (!phaseCounts[p]) phaseCounts[p] = { phase: p, count: 0, crit: 0, avgScore: 0, sumScore: 0 };
+    if (!phaseCounts[p]) phaseCounts[p] = { phase: p, count: 0, sumScore: 0 };
     phaseCounts[p].count++;
     phaseCounts[p].sumScore += w.final_score;
-    if (w.risk_tier === 'CRITICAL') phaseCounts[p].crit++;
   }
   const phaseData = Object.values(phaseCounts).map(p => ({
     ...p, avgScore: p.count > 0 ? p.sumScore / p.count : 0,
   })).sort((a, b) => b.avgScore - a.avgScore);
 
+  const temps = displayWindows.map(w => w.avg_temp_c);
+  const scores = displayWindows.map(w => w.final_score);
+
   return (
-    <div className="p-6 max-w-[1440px] mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Link to="/shipments" className="text-slate-500 hover:text-slate-300 transition"><ArrowLeft className="w-5 h-5" /></Link>
-        <h1 className="text-2xl font-bold text-white">{id}</h1>
-        <span className="text-sm text-slate-500">{displayWindows.length} windows{activeContainer ? ` in ${activeContainer}` : ''}</span>
-        {tierCounts.CRITICAL > 0 && <TierBadge tier="CRITICAL" size="lg" />}
-        {tierCounts.HIGH > 0 && <TierBadge tier="HIGH" size="lg" />}
+    <div className="ship">
+
+      {/* Breadcrumb */}
+      <div className="ship-crumb">
+        <Link to="/shipments"><ArrowLeft style={{ width: 13, height: 13 }} /> Shipments</Link>
+        <span style={{ opacity: 0.5 }}>/</span>
+        <span className="ship-mono" style={{ color: 'var(--ship-ink-0)', fontWeight: 600 }}>{id}</span>
+        <span>{displayWindows.length} windows{activeContainer ? ` in ${activeContainer}` : ''}</span>
+        {tierCounts.CRITICAL > 0 && <TierBadgeV2 tier="CRITICAL" />}
+        {tierCounts.HIGH > 0 && <TierBadgeV2 tier="HIGH" />}
       </div>
 
       {/* Container tabs */}
       {containers.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setActiveContainer(null)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              !activeContainer ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white' : 'glass-card-sm text-slate-400 hover:text-slate-300'
-            }`}>
+        <div className="ship-containertabs">
+          <button type="button" className={`ship-ctab${!activeContainer ? ' active' : ''}`} onClick={() => setActiveContainer(null)}>
             All ({windows.length})
           </button>
           {containers.map(c => {
-            const maxScore = Math.max(...c.windows.map(w => w.final_score));
             const worst = c.windows.reduce((w, x) => x.final_score > w.final_score ? x : w).risk_tier;
             return (
-              <button key={c.id} onClick={() => setActiveContainer(c.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-2 ${
-                  activeContainer === c.id ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white' : 'glass-card-sm text-slate-400 hover:text-slate-300'
-                }`}>
-                <Package className="w-3 h-3" />
+              <button key={c.id} type="button" className={`ship-ctab${activeContainer === c.id ? ' active' : ''}`} onClick={() => setActiveContainer(c.id)}>
                 {c.id}
-                <span className="text-[10px] opacity-70">{c.product}</span>
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TIER_COLORS[worst] || '#64748b' }} />
-                <span className="text-[10px] font-mono">{c.windows.length}w</span>
+                <span style={{ opacity: 0.75 }}>{c.product}</span>
+                <span className="dot" style={{ background: activeContainer === c.id ? '#fff' : TIER_STYLE[worst]?.color }} />
+                <span className="ship-mono">{c.windows.length}w</span>
               </button>
             );
           })}
@@ -116,165 +148,117 @@ export default function ShipmentDetail() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="glass-card-sm p-4 animate-slide-up">
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Tier Breakdown</p>
-          <div className="flex items-center gap-3 mt-2">
-            <div className="w-14 h-14">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={16} outerRadius={26} strokeWidth={0}>
-                  {pieData.map(d => <Cell key={d.name} fill={TIER_COLORS[d.name]} />)}
-                </Pie></PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="space-y-0.5 text-[11px]">
-              {pieData.map(d => (
-                <div key={d.name} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: TIER_COLORS[d.name] }} />
-                  <span className="text-slate-400">{d.name}</span>
-                  <span className="text-white font-mono ml-auto">{d.value}</span>
+      <div className="ship-statgrid">
+        <div className="ship-statcard">
+          <div className="ship-statcard-lbl">Tier Breakdown</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <TierDonut tierCounts={tierCounts} />
+            <div style={{ fontSize: 11.5 }}>
+              {TIER_ORDER.filter(t => tierCounts[t] > 0).map(t => (
+                <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: TIER_STYLE[t].color, display: 'inline-block' }} />
+                  <span style={{ color: 'var(--ship-ink-2)' }}>{humanize(t.toLowerCase())}</span>
+                  <b className="ship-mono" style={{ marginLeft: 'auto', color: 'var(--ship-ink-0)' }}>{tierCounts[t]}</b>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '80ms' }}>
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Risk by Phase</p>
-          <div className="mt-2">
-            <ResponsiveContainer width="100%" height={60}>
-              <BarChart data={phaseData.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 0 }}>
-                <XAxis type="number" hide domain={[0, 1]} />
-                <YAxis type="category" dataKey="phase" hide />
-                <Bar dataKey="avgScore" radius={[0, 4, 4, 0]}>
-                  {phaseData.slice(0, 5).map((d, i) => <Cell key={i} fill={d.avgScore > 0.6 ? '#ef4444' : d.avgScore > 0.3 ? '#eab308' : '#22c55e'} fillOpacity={0.7} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            {phaseData.slice(0, 3).map(d => (
-              <div key={d.phase} className="flex items-center justify-between text-[10px] text-slate-400">
-                <span className="truncate">{d.phase}</span>
-                <span className="font-mono">{d.avgScore.toFixed(3)}</span>
+        <div className="ship-statcard">
+          <div className="ship-statcard-lbl">Risk by Phase</div>
+          {phaseData.slice(0, 4).map(p => (
+            <div key={p.phase} className="ship-phaserow">
+              <span className="k">{humanize(p.phase)}</span>
+              <div className="ship-scoretrack" style={{ flex: 1 }}>
+                <div className="ship-scorefill" style={{ width: `${Math.min(p.avgScore * 100, 100)}%`, background: p.avgScore > 0.6 ? 'var(--ship-red)' : p.avgScore > 0.3 ? 'var(--ship-amber)' : 'var(--ship-green)' }} />
               </div>
-            ))}
-          </div>
+              <span className="v">{p.avgScore.toFixed(2)}</span>
+            </div>
+          ))}
         </div>
 
-        <div className="glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '160ms' }}>
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Temperature Range</p>
-          <div className="mt-3 space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Min</span>
-              <span className="text-cyan-400 font-mono">{Math.min(...displayWindows.map(w => w.avg_temp_c)).toFixed(1)}°C</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Mean</span>
-              <span className="text-white font-mono font-semibold">
-                {(displayWindows.reduce((s, w) => s + w.avg_temp_c, 0) / displayWindows.length).toFixed(1)}°C
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Max</span>
-              <span className="text-red-400 font-mono">{Math.max(...displayWindows.map(w => w.avg_temp_c)).toFixed(1)}°C</span>
-            </div>
-          </div>
+        <div className="ship-statcard">
+          <div className="ship-statcard-lbl">Temperature Range</div>
+          <div className="ship-statline"><span className="k">Min</span><span className="v" style={{ color: 'var(--ship-blue)' }}>{Math.min(...temps).toFixed(1)}°C</span></div>
+          <div className="ship-statline"><span className="k">Mean</span><span className="v">{(temps.reduce((s, t) => s + t, 0) / temps.length).toFixed(1)}°C</span></div>
+          <div className="ship-statline"><span className="k">Max</span><span className="v" style={{ color: 'var(--ship-red)' }}>{Math.max(...temps).toFixed(1)}°C</span></div>
         </div>
 
-        <div className="glass-card-sm p-4 animate-slide-up" style={{ animationDelay: '240ms' }}>
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider">Risk Score Stats</p>
-          <div className="mt-3 space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Max Score</span>
-              <span className="text-red-400 font-mono font-bold">{Math.max(...displayWindows.map(w => w.final_score)).toFixed(4)}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Mean Score</span>
-              <span className="text-white font-mono">
-                {(displayWindows.reduce((s, w) => s + w.final_score, 0) / displayWindows.length).toFixed(4)}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Containers</span>
-              <span className="text-slate-300 font-mono">{containers.length}</span>
-            </div>
-          </div>
+        <div className="ship-statcard">
+          <div className="ship-statcard-lbl">Risk Score Stats</div>
+          <div className="ship-statline"><span className="k">Max Score</span><span className="v" style={{ color: 'var(--ship-red)', fontWeight: 700 }}>{Math.max(...scores).toFixed(4)}</span></div>
+          <div className="ship-statline"><span className="k">Mean Score</span><span className="v">{(scores.reduce((s, x) => s + x, 0) / scores.length).toFixed(4)}</span></div>
+          <div className="ship-statline"><span className="k">Containers</span><span className="v">{containers.length}</span></div>
         </div>
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-2 gap-6">
-        <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '300ms' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Thermometer className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-semibold text-slate-300">Temperature Timeline</h2>
+      <div className="ship-charts2">
+        <div className="ship-statcard">
+          <div className="ship-chart-head">
+            <Thermometer style={{ width: 15, height: 15, color: 'var(--ship-blue)' }} />
+            <h2>Temperature Timeline</h2>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
-              <XAxis dataKey="idx" tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
-              <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
+              <XAxis dataKey="idx" tick={{ fontSize: 10, fill: 'var(--ship-ink-2)' }} stroke="transparent" />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--ship-ink-2)' }} stroke="transparent" />
               <Tooltip content={<ChartTooltip />} />
-              <Line type="monotone" dataKey="temp" stroke="#06b6d4" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="temp" stroke="var(--ship-blue)" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '380ms' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4 text-violet-400" />
-            <h2 className="text-sm font-semibold text-slate-300">Risk Score Timeline</h2>
+        <div className="ship-statcard">
+          <div className="ship-chart-head">
+            <TrendingUp style={{ width: 15, height: 15, color: 'var(--ship-red)' }} />
+            <h2>Risk Score Timeline</h2>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
-              <XAxis dataKey="idx" tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
-              <YAxis domain={[0, 1]} tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
+              <XAxis dataKey="idx" tick={{ fontSize: 10, fill: 'var(--ship-ink-2)' }} stroke="transparent" />
+              <YAxis domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--ship-ink-2)' }} stroke="transparent" />
               <Tooltip content={<ChartTooltip />} />
-              <ReferenceLine y={0.8} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.4} />
-              <ReferenceLine y={0.6} stroke="#f97316" strokeDasharray="4 4" strokeOpacity={0.4} />
-              <ReferenceLine y={0.3} stroke="#eab308" strokeDasharray="4 4" strokeOpacity={0.4} />
-              <Line type="monotone" dataKey="final" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Fused" />
-              <Line type="monotone" dataKey="det" stroke="#f97316" strokeWidth={1} dot={false} opacity={0.4} name="Det" />
-              <Line type="monotone" dataKey="ml" stroke="#10b981" strokeWidth={1} dot={false} opacity={0.4} name="ML" />
+              <ReferenceLine y={0.8} stroke="var(--ship-red)" strokeDasharray="4 4" strokeOpacity={0.5} />
+              <ReferenceLine y={0.6} stroke="var(--ship-amber)" strokeDasharray="4 4" strokeOpacity={0.5} />
+              <ReferenceLine y={0.3} stroke="var(--ship-yellow)" strokeDasharray="4 4" strokeOpacity={0.5} />
+              <Line type="monotone" dataKey="final" stroke="var(--ship-red)" strokeWidth={2} dot={false} name="Fused" />
+              <Line type="monotone" dataKey="det" stroke="var(--ship-ink-2)" strokeWidth={1} dot={false} opacity={0.6} name="Det" />
+              <Line type="monotone" dataKey="ml" stroke="var(--ship-green)" strokeWidth={1} dot={false} opacity={0.6} name="ML" />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       {/* Window table */}
-      <div className="glass-card overflow-hidden animate-slide-up" style={{ animationDelay: '460ms' }}>
-        <div className="px-5 py-3.5 border-b border-white/[0.06]">
-          <h2 className="text-sm font-semibold text-slate-300">Window Details</h2>
+      <div className="ship-tablecard">
+        <div className="ship-table-head">
+          <h2 className="ship-serif" style={{ fontWeight: 600, fontSize: 14.5, margin: 0, color: 'var(--ship-ink-0)' }}>Window Details</h2>
         </div>
-        <div className="overflow-x-auto max-h-[400px] overflow-y-auto scrollbar-thin">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-[#1e293b] z-10">
-              <tr className="text-left text-[10px] text-slate-500 uppercase tracking-wider border-b border-white/[0.06]">
-                <th className="px-4 py-2.5 font-medium">Window</th>
-                <th className="px-4 py-2.5 font-medium">Container</th>
-                <th className="px-4 py-2.5 font-medium">Product</th>
-                <th className="px-4 py-2.5 font-medium">Phase</th>
-                <th className="px-4 py-2.5 font-medium">Temp</th>
-                <th className="px-4 py-2.5 font-medium">Det</th>
-                <th className="px-4 py-2.5 font-medium">ML</th>
-                <th className="px-4 py-2.5 font-medium">Final</th>
-                <th className="px-4 py-2.5 font-medium">Tier</th>
-                <th className="px-4 py-2.5 font-medium">Rules</th>
+        <div className="ship-tablewrap">
+          <table className="ship-table">
+            <thead>
+              <tr>
+                <th>Window</th><th>Container</th><th>Product</th><th>Phase</th>
+                <th>Temp</th><th>Det</th><th>ML</th><th>Final</th><th>Tier</th><th>Rules</th>
               </tr>
             </thead>
             <tbody>
               {displayWindows.map(w => (
-                <tr key={w.window_id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition">
-                  <td className="px-4 py-2 font-mono text-slate-300">{w.window_id}</td>
-                  <td className="px-4 py-2 text-slate-400 font-mono">{w.container_id}</td>
-                  <td className="px-4 py-2 text-slate-400">{w.product_id}</td>
-                  <td className="px-4 py-2 text-slate-400">{w.transit_phase}</td>
-                  <td className="px-4 py-2 font-mono text-slate-300">{w.avg_temp_c?.toFixed(1)}°C</td>
-                  <td className="px-4 py-2 font-mono text-orange-400/70">{w.det_score?.toFixed(3)}</td>
-                  <td className="px-4 py-2 font-mono text-emerald-400/70">{w.ml_score?.toFixed(3)}</td>
-                  <td className="px-4 py-2 font-mono font-semibold text-white">{w.final_score?.toFixed(4)}</td>
-                  <td className="px-4 py-2"><TierBadge tier={w.risk_tier} /></td>
-                  <td className="px-4 py-2 text-slate-500 max-w-[160px] truncate">{w.det_rules_fired || '—'}</td>
+                <tr key={w.window_id}>
+                  <td className="ship-mono" style={{ color: 'var(--ship-ink-0)' }}>{w.window_id}</td>
+                  <td className="ship-mono">{w.container_id}</td>
+                  <td>{w.product_id}</td>
+                  <td>{humanize(w.transit_phase)}</td>
+                  <td className="ship-mono" style={{ color: 'var(--ship-ink-0)' }}>{w.avg_temp_c?.toFixed(1)}°C</td>
+                  <td className="ship-mono" style={{ color: 'var(--ship-amber)', opacity: 0.85 }}>{w.det_score?.toFixed(3)}</td>
+                  <td className="ship-mono" style={{ color: 'var(--ship-green)', opacity: 0.85 }}>{w.ml_score?.toFixed(3)}</td>
+                  <td className="ship-mono" style={{ color: 'var(--ship-ink-0)', fontWeight: 600 }}>{w.final_score?.toFixed(4)}</td>
+                  <td><TierBadgeV2 tier={w.risk_tier} /></td>
+                  <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {w.det_rules_fired ? humanize(w.det_rules_fired) : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -1,0 +1,156 @@
+/*
+  Scoped styles for the redesigned Run Detail page (/agent-v2/runs/:runKey).
+  Prefixed `.ard-` / nested under `.ard` — same "Clinical Calm" token/mechanism
+  as the other redesigned pages (dark default, `html.light .ard` override).
+*/
+
+.ard{
+  --ard-bg-0:#12161a;
+  --ard-panel:#171c21;
+  --ard-panel-border:#262d33;
+  --ard-hair:#212830;
+  --ard-ink-0:#eef1f0;
+  --ard-ink-1:#9ba7ab;
+  --ard-ink-2:#67757a;
+  --ard-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --ard-blue:#5fb8b0;
+  --ard-blue-soft:rgba(95,184,176,0.1);
+  --ard-blue-soft-2:rgba(95,184,176,0.16);
+  --ard-red:#e2807f;
+  --ard-red-soft:rgba(226,128,127,0.1);
+  --ard-red-soft-2:rgba(226,128,127,0.16);
+  --ard-amber:#e0a856;
+  --ard-amber-soft:rgba(224,168,86,0.1);
+  --ard-yellow:#d9c46a;
+  --ard-yellow-soft:rgba(217,196,106,0.1);
+  --ard-green:#7bc499;
+  --ard-green-soft:rgba(123,196,153,0.1);
+  --ard-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--ard-ink-0);
+  padding:24px 28px 60px;
+  max-width:1440px;
+  margin:0 auto;
+}
+
+html.light .ard{
+  --ard-bg-0:#f6f7f5;
+  --ard-panel:#ffffff;
+  --ard-panel-border:#e4e7e2;
+  --ard-hair:#eef0ec;
+  --ard-ink-0:#1c2321;
+  --ard-ink-1:#54615c;
+  --ard-ink-2:#8b968f;
+  --ard-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --ard-blue:#0d9488;
+  --ard-blue-soft:rgba(13,148,136,0.09);
+  --ard-blue-soft-2:rgba(13,148,136,0.15);
+  --ard-red:#dc2626;
+  --ard-red-soft:rgba(220,38,38,0.09);
+  --ard-red-soft-2:rgba(220,38,38,0.15);
+  --ard-amber:#ea580c;
+  --ard-amber-soft:rgba(234,88,12,0.11);
+  --ard-yellow:#ca8a04;
+  --ard-yellow-soft:rgba(202,138,4,0.12);
+  --ard-green:#16a34a;
+  --ard-green-soft:rgba(22,163,74,0.1);
+  --ard-track:#e9ece7;
+}
+
+.ard-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+.ard-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+
+/* breadcrumb */
+.ard-crumb{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ard-ink-2); margin-bottom:16px;}
+.ard-crumb a{color:var(--ard-ink-2); text-decoration:none; display:flex; align-items:center; gap:5px;}
+.ard-crumb a:hover{color:var(--ard-ink-0);}
+
+/* hero card */
+.ard-herocard{border-radius:16px; padding:24px 28px; background:var(--ard-panel); border:1px solid var(--ard-panel-border); box-shadow:var(--ard-shadow); margin-bottom:16px;}
+.ard-herotop{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;}
+.ard-badgerow{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+.ard-tierpill{display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase;}
+.ard-heroid{font-family:ui-monospace,monospace; font-size:22px; font-weight:700; color:var(--ard-ink-0);}
+.ard-herosub{font-size:12.5px; color:var(--ard-ink-2); margin-top:5px;}
+.ard-herostatus{padding:9px 18px; border-radius:11px; text-align:right; flex:none;}
+.ard-herostatus .k{font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;}
+.ard-herostatus .v{font-size:15px; font-weight:700; margin-top:3px;}
+.ard-herostats{display:flex; margin-top:20px; border-top:1px solid var(--ard-hair); padding-top:18px; flex-wrap:wrap;}
+.ard-herostat{flex:1; min-width:100px; text-align:center; border-right:1px solid var(--ard-hair); padding:0 14px;}
+.ard-herostat:last-child{border-right:none;}
+.ard-herostat .v{font-family:ui-monospace,monospace; font-size:19px; font-weight:700;}
+.ard-herostat .k{font-size:10.5px; color:var(--ard-ink-2); text-transform:uppercase; letter-spacing:0.03em; margin-top:5px;}
+
+/* info panels */
+.ard-infopanel{display:flex; align-items:flex-start; gap:12px; padding:16px 18px; margin-bottom:14px; background:var(--ard-panel); border:1px solid var(--ard-panel-border); border-radius:14px; box-shadow:var(--ard-shadow);}
+.ard-infopanel .ic{width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex:none;}
+.ard-infopanel .lbl{font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ard-ink-2); margin-bottom:4px;}
+.ard-infopanel .txt{font-size:13px; color:var(--ard-ink-0); line-height:1.5;}
+
+/* sidebar + timeline layout */
+.ard-detailgrid{display:grid; grid-template-columns:230px 1fr; gap:14px; align-items:start;}
+.ard-panel{background:var(--ard-panel); border:1px solid var(--ard-panel-border); border-radius:14px; box-shadow:var(--ard-shadow);}
+.ard-sidefield{display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:8px 0; border-bottom:1px solid var(--ard-hair); gap:8px;}
+.ard-sidefield:last-child{border-bottom:none;}
+.ard-sidefield .k{color:var(--ard-ink-2);}
+.ard-sidefield .v{font-family:ui-monospace,monospace; font-weight:600; color:var(--ard-ink-0); text-align:right;}
+.ard-sidehead{font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ard-ink-2); margin:14px 0 4px;}
+.ard-sidehead:first-child{margin-top:0;}
+
+.ard-timelinehead{display:flex; align-items:center; gap:8px; margin-bottom:18px;}
+.ard-stepbadge{font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; background:var(--ard-bg-0); color:var(--ard-ink-2); border:1px solid var(--ard-panel-border);}
+
+.ard-tlitem{display:flex; gap:14px; position:relative; padding-bottom:22px;}
+.ard-tlitem:last-child{padding-bottom:0;}
+.ard-tlline{position:absolute; left:13px; top:28px; bottom:0; width:1px; background:var(--ard-hair);}
+.ard-tlcircle{width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; border:1.5px solid; position:relative; z-index:1;}
+.ard-tltitle{font-size:13px; font-weight:600; color:var(--ard-ink-0);}
+.ard-tltime{font-size:10px; color:var(--ard-ink-2); white-space:nowrap;}
+.ard-tlsummary{font-size:11.5px; color:var(--ard-ink-1); margin-top:4px; line-height:1.55;}
+.ard-tltoprow{display:flex; justify-content:space-between; align-items:flex-start; gap:12px;}
+.ard-tlnote{font-size:11px; color:var(--ard-ink-1); line-height:1.55; font-style:italic; margin-top:2px;}
+
+/* approval step */
+.ard-approvedby{font-size:11px; color:var(--ard-ink-2); margin-top:6px;}
+.ard-approvedby b{color:var(--ard-ink-0); font-weight:600;}
+.ard-gotoapproval{display:inline-flex; align-items:center; gap:6px; margin-top:8px; padding:6px 14px; border-radius:8px; background:var(--ard-amber-soft); border:1px solid var(--ard-amber-soft); color:var(--ard-amber); font-size:12px; font-weight:700; text-decoration:none;}
+.ard-gotoapproval:hover{filter:brightness(1.1);}
+
+/* execute step accordion */
+.ard-exectoggle{display:flex; align-items:center; justify-content:space-between; padding:8px 11px; border-radius:9px; border:1px solid var(--ard-panel-border); background:var(--ard-bg-0); cursor:pointer; margin-top:8px; user-select:none;}
+.ard-exectoggle:hover{border-color:var(--ard-blue);}
+.ard-exectoggle .l{display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:var(--ard-ink-2);}
+.ard-exectoggle .count{color:var(--ard-blue);}
+.ard-exectoggle .names{color:var(--ard-ink-2); font-weight:500;}
+.ard-execchev{width:14px; height:14px; color:var(--ard-ink-2); transition:transform 0.22s cubic-bezier(0.4,0,0.2,1); flex:none;}
+.ard-execexpand{max-height:0; opacity:0; overflow:hidden; transition:max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease, margin-top 0.25s ease; display:flex; flex-direction:column; gap:10px;}
+.ard-execexpand.open{max-height:4000px; opacity:1; margin-top:10px;}
+
+/* agent card (header restyled; body reuses the app's existing ToolResult renderers as-is) */
+.ard-agentcard{background:var(--ard-bg-0); border:1px solid var(--ard-panel-border); border-radius:12px; overflow:hidden;}
+.ard-agentcard-head{display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid var(--ard-hair);}
+.ard-agentcard-head .l{display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--ard-ink-0);}
+.ard-agenticon{width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex:none;}
+.ard-agentstatus{font-size:10px; font-weight:700; padding:3px 10px; border-radius:6px; white-space:nowrap;}
+.ard-agentcard-body{padding:12px 14px;}
+
+/* per-agent structured result detail (mirrors the mockup's .ac-* classes) */
+.ac-statusrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+.ac-badge{font-size:10px; font-weight:700; letter-spacing:0.03em; padding:4px 10px; border-radius:7px;}
+.ac-methodbadge{font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:6px; background:var(--ard-track); color:var(--ard-ink-2);}
+.ac-headline{display:flex; align-items:baseline; gap:8px; margin-bottom:10px;}
+.ac-headline .big{font-family:Charter,Georgia,serif; font-weight:700; font-size:19px; color:var(--ard-ink-0);}
+.ac-headline .lbl{font-size:10.5px; color:var(--ard-ink-2);}
+.ac-kvgrid{display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; margin-bottom:10px;}
+.ac-kv{display:flex; justify-content:space-between; gap:8px; font-size:11.5px; border-bottom:1px dashed var(--ard-hair); padding-bottom:4px;}
+.ac-kv .k{color:var(--ard-ink-2); flex:none;}
+.ac-kv .v{color:var(--ard-ink-0); font-weight:600; text-align:right; font-family:ui-monospace,monospace;}
+.ac-box{border-radius:9px; padding:9px 12px; margin-bottom:8px;}
+.ac-box .boxlbl{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:5px; display:flex; align-items:center; gap:5px;}
+.ac-box .line{font-size:11px; line-height:1.55; padding-left:12px; position:relative;}
+.ac-box .line::before{content:"•"; position:absolute; left:0;}
+.ac-evidence{font-size:11px; font-style:italic; color:var(--ard-ink-1); line-height:1.6; margin-bottom:10px;}
+.ac-altrow{display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; padding:5px 0;}
+.ac-altrow .name{color:var(--ard-ink-1);}
+.ac-sectionlbl{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--ard-ink-2); margin:8px 0 4px;}

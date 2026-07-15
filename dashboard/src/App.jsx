@@ -5,8 +5,10 @@ import { useApi } from './hooks/useApi';
 import {
   LayoutDashboard, Ship, ScrollText, CheckCircle, Activity,
   Bot, ShieldAlert, Brain, Wifi, WifiOff, FlaskConical,
+  ChevronLeft, Sun, Moon,
 } from 'lucide-react';
-import Overview from './components/Overview';
+import { useTheme } from './lib/ThemeContext';
+import OverviewV2 from './components/OverviewV2';
 import ShipmentList from './components/ShipmentList';
 import ShipmentDetail from './components/ShipmentDetail';
 import AuditLog from './components/AuditLog';
@@ -18,8 +20,8 @@ import AgentActivityV2 from './components/AgentActivityV2';
 import AgentRunDetailV2 from './components/AgentRunDetailV2';
 import AgentQuality from './components/AgentQuality';
 import TopBar from './components/TopBar';
-import ThemeToggleButton from './components/ThemeToggleButton';
 import { OrchestrationStreamProvider } from './lib/OrchestrationStreamContext';
+import './components/sidebar-v2.css';
 
 const NAV = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
@@ -69,38 +71,37 @@ function LLMBadge() {
 function Sidebar() {
   const { data: pending } = useApi('/approvals/pending');
   const pendingCount = Array.isArray(pending) ? pending.length : 0;
+  const { theme, toggleTheme } = useTheme();
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('sidebar-collapsed') === '1';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+  }, [collapsed]);
 
   return (
-    <aside className="w-60 flex flex-col min-h-screen shrink-0 bg-[var(--card-bg)] border-r border-[var(--card-border)]">
-      <div className="px-5 py-5 border-b border-[var(--card-border)]">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-cyan)' }}>
-            <ShieldAlert className="w-4.5 h-4.5" style={{ color: 'var(--card-bg)' }} />
-          </div>
-          <div>
-            <span className="text-sm font-bold tracking-tight font-heading text-[var(--text-primary)]">AI Cargo</span>
-            <p className="text-[10px] text-[var(--text-secondary-2)] leading-tight">Cold-Chain Intelligence</p>
-          </div>
-        </div>
+    <aside className={`sidebar-v2${collapsed ? ' collapsed' : ''}`}>
+      <div className="sb-top">
+        <div className="sb-brandmark"><ShieldAlert style={{ width: 16, height: 16 }} /></div>
+        <span className="sb-brand-text">AI Cargo</span>
+        <button type="button" className="sb-collapse-btn" onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <ChevronLeft style={{ width: 14, height: 14 }} />
+        </button>
       </div>
 
-      <nav className="flex-1 py-4 px-3 space-y-0.5">
-        <p className="px-3 mb-1 text-[10px] uppercase tracking-widest text-[var(--text-secondary-2)]">MAIN</p>
+      <nav className="sb-nav">
+        <p className="sb-section-lbl">Main</p>
         {NAV.map(({ to, icon: Icon, label, badgeKey }) => (
-          <NavLink key={to} to={to} end={to === '/'}>
+          <NavLink key={to} to={to} end={to === '/'} style={{ textDecoration: 'none' }}>
             {({ isActive }) => (
-              <span
-                className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-heading transition-all duration-200
-                ${isActive ? 'bg-cyan-500/10 font-medium' : 'text-[var(--text-secondary-2)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}
-                style={isActive ? { color: 'var(--accent-cyan)' } : undefined}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                {label}
+              <span className={`sb-item${isActive ? ' active' : ''}`}>
+                <Icon />
+                <span>{label}</span>
                 {badgeKey === 'approvals' && pendingCount > 0 && (
-                  <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold font-data"
-                    style={{ backgroundColor: 'var(--accent-red)', color: '#fff' }}>
-                    {pendingCount}
-                  </span>
+                  <span className="sb-badge">{pendingCount}</span>
                 )}
               </span>
             )}
@@ -108,13 +109,19 @@ function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-[var(--card-border)]">
-        <ThemeToggleButton />
-        <LLMBadge />
-        <div className="px-4 pb-4 text-[10px] text-[var(--text-secondary-2)] space-y-0.5">
-          <p>GDP / FDA 21 CFR 11 Compliant</p>
-          <p>LangGraph + XGBoost + SHAP + RAG</p>
+      <div className="sb-bottom">
+        <div className="sb-themetoggle">
+          <button type="button" className={theme === 'light' ? 'active' : ''} title="Light mode"
+            onClick={() => theme !== 'light' && toggleTheme()}>
+            <Sun style={{ width: 15, height: 15 }} />
+          </button>
+          <button type="button" className={theme === 'dark' ? 'active' : ''} title="Dark mode"
+            onClick={() => theme !== 'dark' && toggleTheme()}>
+            <Moon style={{ width: 15, height: 15 }} />
+          </button>
         </div>
+        <div className="sb-llmbadge"><LLMBadge /></div>
+        <p className="sb-footer-text">GDP / FDA 21 CFR 11 Compliant<br />LangGraph + XGBoost + SHAP + RAG</p>
       </div>
     </aside>
   );
@@ -129,7 +136,7 @@ export default function App() {
         <main className="flex-1 overflow-auto scrollbar-thin">
           <OrchestrationStreamProvider>
             <Routes>
-              <Route path="/" element={<Overview />} />
+              <Route path="/" element={<OverviewV2 />} />
               <Route path="/monitoring" element={<Monitoring />} />
               <Route path="/shipments" element={<ShipmentList />} />
               <Route path="/shipments/:id" element={<ShipmentDetail />} />

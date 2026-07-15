@@ -1,0 +1,163 @@
+/*
+  Scoped styles for the redesigned Compliance Audit Log page.
+  Prefixed `.aud-` / nested under `.aud` — same "Clinical Calm" token/mechanism
+  as the other redesigned pages (dark default, `html.light .aud` override).
+*/
+
+.aud{
+  --aud-bg-0:#12161a;
+  --aud-panel:#171c21;
+  --aud-panel-border:#262d33;
+  --aud-hair:#212830;
+  --aud-ink-0:#eef1f0;
+  --aud-ink-1:#9ba7ab;
+  --aud-ink-2:#67757a;
+  --aud-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --aud-blue:#5fb8b0;
+  --aud-blue-soft:rgba(95,184,176,0.1);
+  --aud-blue-soft-2:rgba(95,184,176,0.16);
+  --aud-red:#e2807f;
+  --aud-red-soft:rgba(226,128,127,0.1);
+  --aud-amber:#e0a856;
+  --aud-amber-soft:rgba(224,168,86,0.1);
+  --aud-yellow:#d9c46a;
+  --aud-yellow-soft:rgba(217,196,106,0.1);
+  --aud-green:#7bc499;
+  --aud-green-soft:rgba(123,196,153,0.1);
+  --aud-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--aud-ink-0);
+  padding:24px 28px 60px;
+  max-width:1440px;
+  margin:0 auto;
+}
+
+html.light .aud{
+  --aud-bg-0:#f6f7f5;
+  --aud-panel:#ffffff;
+  --aud-panel-border:#e4e7e2;
+  --aud-hair:#eef0ec;
+  --aud-ink-0:#1c2321;
+  --aud-ink-1:#54615c;
+  --aud-ink-2:#8b968f;
+  --aud-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --aud-blue:#0d9488;
+  --aud-blue-soft:rgba(13,148,136,0.09);
+  --aud-blue-soft-2:rgba(13,148,136,0.15);
+  --aud-red:#dc2626;
+  --aud-red-soft:rgba(220,38,38,0.09);
+  --aud-amber:#ea580c;
+  --aud-amber-soft:rgba(234,88,12,0.11);
+  --aud-yellow:#ca8a04;
+  --aud-yellow-soft:rgba(202,138,4,0.12);
+  --aud-green:#16a34a;
+  --aud-green-soft:rgba(22,163,74,0.1);
+  --aud-track:#e9ece7;
+}
+
+.aud-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+.aud-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+
+/* header */
+.aud-top{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px;}
+.aud-title{font-family:Charter,"Iowan Old Style",Georgia,serif; font-weight:600; font-size:24px; margin:0; color:var(--aud-ink-0); letter-spacing:-0.01em;}
+.aud-sub{font-size:12.5px; color:var(--aud-ink-2); margin-top:3px;}
+.aud-viewtabs{display:flex; gap:7px;}
+.aud-viewtab{font-size:12px; font-weight:500; padding:7px 14px; border-radius:9px; border:1px solid var(--aud-panel-border); color:var(--aud-ink-2); background:var(--aud-panel); cursor:pointer; font-family:inherit;}
+.aud-viewtab.active{background:var(--aud-blue-soft); color:var(--aud-blue); border-color:var(--aud-blue-soft-2);}
+
+/* kpis */
+.aud-kpis{display:grid; gap:14px; margin-bottom:16px;}
+.aud-kpi{border-radius:14px; padding:16px 17px; background:var(--aud-panel); border:1px solid var(--aud-panel-border); box-shadow:var(--aud-shadow); position:relative;}
+.aud-kpi-tag{position:absolute; top:14px; right:14px; font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:6px;}
+.aud-kpi-label{font-size:10.5px; font-weight:500; color:var(--aud-ink-2); text-transform:uppercase; letter-spacing:0.03em;}
+.aud-kpi-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:24px; margin-top:8px; color:var(--aud-ink-0);}
+
+/* filter bar */
+.aud-bar{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px;}
+.aud-tabs{display:flex; gap:7px; flex-wrap:wrap;}
+.aud-tab{font-size:12px; font-weight:500; padding:7px 13px; border-radius:9px; border:1px solid var(--aud-panel-border); color:var(--aud-ink-2); background:var(--aud-panel); cursor:pointer; font-family:inherit;}
+.aud-tab.active{background:var(--aud-blue-soft); color:var(--aud-blue); border-color:var(--aud-blue-soft-2);}
+.aud-search{display:flex; align-items:center; gap:7px; background:var(--aud-bg-0); border:1px solid var(--aud-panel-border); border-radius:9px; padding:8px 12px; width:230px;}
+.aud-search svg{width:13px; height:13px; color:var(--aud-ink-2); flex:none;}
+.aud-search input{background:transparent; border:none; outline:none; color:var(--aud-ink-0); font-family:inherit; font-size:12.5px; width:100%;}
+.aud-search input::placeholder{color:var(--aud-ink-2);}
+
+/* panels + charts */
+.aud-charts2{display:grid; grid-template-columns:1fr 1.6fr; gap:14px; margin-bottom:16px;}
+.aud-panel{background:var(--aud-panel); border:1px solid var(--aud-panel-border); border-radius:14px; box-shadow:var(--aud-shadow); padding:16px 18px;}
+.aud-panel-h{font-family:Charter,Georgia,serif; font-weight:600; font-size:13.5px; color:var(--aud-ink-0); margin:0 0 3px;}
+.aud-panel-sub{font-size:10.5px; color:var(--aud-ink-2); margin:0 0 12px;}
+.aud-barrow{display:flex; align-items:center; gap:10px; padding:6px 0;}
+.aud-barrow .lbl{width:150px; flex:none; font-size:11px; color:var(--aud-ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.aud-barrow .track{flex:1; height:6px; border-radius:3px; background:var(--aud-track); overflow:hidden;}
+.aud-barrow .fill{height:100%; border-radius:3px;}
+.aud-barrow .val{width:34px; flex:none; text-align:right; font-family:ui-monospace,monospace; font-size:11px; font-weight:600; color:var(--aud-ink-0);}
+
+/* tier tags/badges */
+.aud-tier{font-size:10px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap; flex:none;}
+.aud-agentchip{font-size:9.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap;}
+
+/* record list */
+.aud-list{background:var(--aud-panel); border:1px solid var(--aud-panel-border); border-radius:14px; overflow:hidden; box-shadow:var(--aud-shadow);}
+.aud-findingrow{display:flex; align-items:center; gap:10px; padding:11px 18px; border-bottom:1px solid var(--aud-hair); background:var(--aud-red-soft); flex-wrap:wrap;}
+.aud-row{display:flex; align-items:center; gap:10px; padding:12px 18px; cursor:pointer; border-bottom:1px solid var(--aud-hair); flex-wrap:wrap;}
+.aud-row:last-child, .aud-findingrow:last-child{border-bottom:none;}
+.aud-row:hover{background:var(--aud-blue-soft);}
+.aud-id{font-family:ui-monospace,monospace; font-size:12.5px; font-weight:700; color:var(--aud-ink-0);}
+.aud-sub2{font-size:11px; color:var(--aud-ink-2);}
+.aud-grow{flex:1; min-width:0;}
+.aud-time{font-size:10.5px; color:var(--aud-ink-2); font-family:ui-monospace,monospace; white-space:nowrap;}
+.aud-chev{width:14px; height:14px; color:var(--aud-ink-2); flex:none; transition:transform 0.15s ease;}
+
+.aud-detail{display:none; grid-template-columns:repeat(4,1fr); gap:16px; padding:4px 18px 18px;}
+.aud-detail.open{display:grid;}
+.aud-detail .collbl{font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--aud-ink-2); margin-bottom:7px;}
+.aud-detail .line{font-size:11.5px; color:var(--aud-ink-1); line-height:1.6;}
+.aud-detail .line b{color:var(--aud-ink-0); font-family:ui-monospace,monospace; font-weight:600;}
+.aud-detail a{color:var(--aud-blue); text-decoration:none; font-size:11.5px; font-weight:600;}
+.aud-detail a:hover{text-decoration:underline;}
+
+.aud-empty{padding:48px 24px; text-align:center; color:var(--aud-ink-2);}
+.aud-empty svg{width:32px; height:32px; margin-bottom:10px; opacity:0.6;}
+
+/* Audit Trail Integrity banner */
+.aud-integrity{display:flex; align-items:center; gap:16px; padding:14px 18px; border-radius:14px; background:var(--aud-green-soft); border:1px solid var(--aud-panel-border); margin-bottom:16px; flex-wrap:wrap;}
+.aud-integrity-icon{width:34px; height:34px; border-radius:10px; background:var(--aud-green); color:var(--aud-panel); display:flex; align-items:center; justify-content:center; flex:none;}
+.aud-integrity-icon svg{width:18px; height:18px;}
+.aud-integrity-body{flex:1; min-width:220px;}
+.aud-integrity-title{font-size:12.5px; font-weight:700; color:var(--aud-ink-0); display:flex; align-items:center; gap:8px;}
+.aud-integrity-badge{font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:20px; background:var(--aud-green); color:var(--aud-panel); text-transform:uppercase; letter-spacing:0.03em;}
+.aud-integrity-hash{font-family:ui-monospace,monospace; font-size:11px; color:var(--aud-ink-1); margin-top:3px; word-break:break-all;}
+.aud-integrity-actions{display:flex; align-items:center; gap:10px; flex:none;}
+.aud-integrity-btn{font-size:11.5px; font-weight:600; padding:7px 13px; border-radius:9px; border:1px solid var(--aud-panel-border); background:var(--aud-panel); color:var(--aud-ink-0); cursor:pointer; font-family:inherit;}
+.aud-integrity-btn:hover{background:var(--aud-blue-soft);}
+.aud-integrity-howbtn{font-size:11px; color:var(--aud-blue); background:none; border:none; cursor:pointer; font-family:inherit; text-decoration:underline; padding:0;}
+.aud-integrity-how{width:100%; margin-top:10px; padding-top:12px; border-top:1px solid var(--aud-panel-border); font-size:11.5px; color:var(--aud-ink-1); line-height:1.6;}
+.aud-integrity-how .formula{font-family:ui-monospace,monospace; font-size:11px; background:var(--aud-bg-0); border:1px solid var(--aud-panel-border); border-radius:8px; padding:8px 12px; margin-top:8px; color:var(--aud-ink-0);}
+
+/* Compliance Reports panel */
+.aud-reportgen-row{display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:14px;}
+.aud-reportgen-field{display:flex; flex-direction:column; gap:5px; min-width:150px;}
+.aud-reportgen-field label{font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; color:var(--aud-ink-2);}
+.aud-reportgen-field select,
+.aud-reportgen-field input{font-family:inherit; font-size:12px; padding:8px 10px; border-radius:8px; border:1px solid var(--aud-panel-border); background:var(--aud-bg-0); color:var(--aud-ink-0);}
+.aud-reportgen-field select:disabled,
+.aud-reportgen-field input:disabled{opacity:0.45; cursor:not-allowed;}
+.aud-reportgen-toggle{display:flex; gap:6px;}
+.aud-reportgen-toggle button{font-size:11.5px; font-weight:600; padding:8px 12px; border-radius:8px; border:1px solid var(--aud-panel-border); background:var(--aud-bg-0); color:var(--aud-ink-2); cursor:pointer; font-family:inherit;}
+.aud-reportgen-toggle button.active{background:var(--aud-blue-soft); color:var(--aud-blue); border-color:var(--aud-blue-soft-2);}
+.aud-reportgen-gobtn{font-size:12px; font-weight:700; padding:9px 16px; border-radius:9px; border:none; background:var(--aud-blue); color:var(--aud-panel); cursor:pointer; font-family:inherit;}
+.aud-reportgen-gobtn:disabled{opacity:0.5; cursor:not-allowed;}
+
+.aud-reportlist{display:flex; flex-direction:column; gap:0; border-top:1px solid var(--aud-hair); margin-top:4px;}
+.aud-report-row{display:flex; align-items:center; gap:12px; padding:11px 2px; border-bottom:1px solid var(--aud-hair); flex-wrap:wrap;}
+.aud-report-row:last-child{border-bottom:none;}
+.aud-report-name{font-size:12.5px; font-weight:600; color:var(--aud-ink-0);}
+.aud-report-meta{font-size:10.5px; color:var(--aud-ink-2);}
+.aud-report-fmt{font-size:9.5px; font-weight:700; padding:3px 8px; border-radius:6px; background:var(--aud-panel-border); color:var(--aud-ink-1); flex:none;}
+.aud-report-signed{font-size:9.5px; font-weight:700; padding:3px 8px; border-radius:6px; background:var(--aud-green-soft); color:var(--aud-green); flex:none;}
+.aud-report-dlbtn{margin-left:auto; font-size:11.5px; font-weight:600; padding:6px 12px; border-radius:8px; border:1px solid var(--aud-panel-border); background:var(--aud-panel); color:var(--aud-blue); cursor:pointer; font-family:inherit; flex:none;}
+.aud-report-dlbtn:hover{background:var(--aud-blue-soft);}
+.aud-report-empty{font-size:11.5px; color:var(--aud-ink-2); padding:8px 2px;}

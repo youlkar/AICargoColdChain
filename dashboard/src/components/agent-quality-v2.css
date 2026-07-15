@@ -1,0 +1,115 @@
+/*
+  Scoped styles for the redesigned Agent Quality page.
+  Prefixed `.aq-` / nested under `.aq` — same "Clinical Calm" token/mechanism
+  as the other redesigned pages (dark default, `html.light .aq` override).
+*/
+
+.aq{
+  --aq-bg-0:#12161a;
+  --aq-panel:#171c21;
+  --aq-panel-border:#262d33;
+  --aq-hair:#212830;
+  --aq-ink-0:#eef1f0;
+  --aq-ink-1:#9ba7ab;
+  --aq-ink-2:#67757a;
+  --aq-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --aq-blue:#5fb8b0;
+  --aq-blue-soft:rgba(95,184,176,0.1);
+  --aq-red:#e2807f;
+  --aq-red-soft:rgba(226,128,127,0.1);
+  --aq-red-soft-2:rgba(226,128,127,0.16);
+  --aq-amber:#e0a856;
+  --aq-amber-soft:rgba(224,168,86,0.1);
+  --aq-green:#7bc499;
+  --aq-green-soft:rgba(123,196,153,0.1);
+  --aq-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--aq-ink-0);
+  padding:24px 28px 60px;
+  max-width:1320px;
+  margin:0 auto;
+}
+
+html.light .aq{
+  --aq-bg-0:#f6f7f5;
+  --aq-panel:#ffffff;
+  --aq-panel-border:#e4e7e2;
+  --aq-hair:#eef0ec;
+  --aq-ink-0:#1c2321;
+  --aq-ink-1:#54615c;
+  --aq-ink-2:#8b968f;
+  --aq-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --aq-blue:#0d9488;
+  --aq-blue-soft:rgba(13,148,136,0.09);
+  --aq-red:#dc2626;
+  --aq-red-soft:rgba(220,38,38,0.09);
+  --aq-red-soft-2:rgba(220,38,38,0.15);
+  --aq-amber:#ea580c;
+  --aq-amber-soft:rgba(234,88,12,0.11);
+  --aq-green:#16a34a;
+  --aq-green-soft:rgba(22,163,74,0.1);
+  --aq-track:#e9ece7;
+}
+
+.aq-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+.aq-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+
+.aq-top{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px;}
+.aq-title{font-family:Charter,"Iowan Old Style",Georgia,serif; font-weight:600; font-size:24px; margin:0; color:var(--aq-ink-0); letter-spacing:-0.01em;}
+.aq-sub{font-size:12.5px; color:var(--aq-ink-2); margin-top:3px;}
+.aq-segtabs{display:flex; background:var(--aq-bg-0); border:1px solid var(--aq-panel-border); border-radius:9px; padding:3px; gap:2px;}
+.aq-segtabs button{font-size:12px; font-weight:500; padding:6px 14px; border-radius:6px; border:none; background:transparent; color:var(--aq-ink-2); cursor:pointer; font-family:inherit;}
+.aq-segtabs button.active{background:var(--aq-panel); color:var(--aq-blue); box-shadow:var(--aq-shadow);}
+
+.aq-alertbar{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:15px 18px; border-radius:13px; margin-bottom:16px; background:var(--aq-red-soft); border:1px solid var(--aq-red-soft-2);}
+.aq-alertbar .l{display:flex; align-items:center; gap:12px; min-width:0;}
+.aq-alerticon{width:32px; height:32px; border-radius:9px; background:var(--aq-red-soft-2); display:flex; align-items:center; justify-content:center; flex:none; color:var(--aq-red);}
+.aq-alertbar .t1{font-size:13.5px; font-weight:600; color:var(--aq-ink-0);}
+.aq-alertbar .t2{font-size:12px; color:var(--aq-ink-1); margin-top:2px;}
+.aq-link{color:var(--aq-red); font-weight:600; text-decoration:none;}
+.aq-link:hover{text-decoration:underline;}
+
+.aq-okbar{display:flex; align-items:center; gap:12px; padding:15px 18px; border-radius:13px; margin-bottom:16px; background:var(--aq-green-soft); border:1px solid var(--aq-green-soft);}
+.aq-okbar .t1{font-size:13.5px; font-weight:600; color:var(--aq-green);}
+.aq-okbar .t2{font-size:12px; color:var(--aq-ink-2); margin-top:2px;}
+
+.aq-empty{padding:48px 24px; text-align:center; color:var(--aq-ink-2); background:var(--aq-panel); border:1px solid var(--aq-panel-border); border-radius:14px; box-shadow:var(--aq-shadow);}
+.aq-empty svg{width:28px; height:28px; margin-bottom:10px; opacity:0.6;}
+.aq-empty .t{font-weight:600; color:var(--aq-ink-0); font-size:13px;}
+.aq-empty .d{font-size:12px; margin-top:4px;}
+
+.aq-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;}
+.aq-kpi{border-radius:14px; padding:16px 17px; background:var(--aq-panel); border:1px solid var(--aq-panel-border); box-shadow:var(--aq-shadow); position:relative;}
+.aq-kpi-tag{position:absolute; top:14px; right:14px; font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:6px;}
+.aq-kpi-label{font-size:10.5px; font-weight:500; color:var(--aq-ink-2); text-transform:uppercase; letter-spacing:0.03em;}
+.aq-kpi-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:24px; margin-top:8px; color:var(--aq-ink-0);}
+
+.aq-slimrow{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px;}
+.aq-slim{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:var(--aq-panel); border:1px solid var(--aq-panel-border); border-radius:14px; box-shadow:var(--aq-shadow);}
+.aq-slim .lbl{font-size:12px; color:var(--aq-ink-2); display:flex; align-items:center; gap:8px;}
+.aq-slim .val{font-family:ui-monospace,monospace; font-size:14px; font-weight:700; color:var(--aq-ink-0);}
+
+.aq-charts2{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px;}
+.aq-panel{background:var(--aq-panel); border:1px solid var(--aq-panel-border); border-radius:14px; box-shadow:var(--aq-shadow); padding:16px 18px;}
+.aq-panel-h{font-family:Charter,Georgia,serif; font-weight:600; font-size:13.5px; color:var(--aq-ink-0); margin:0 0 12px;}
+
+.aq-barrow{display:flex; align-items:center; gap:10px; padding:6px 0;}
+.aq-barrow .lbl{width:150px; flex:none; font-size:11px; color:var(--aq-ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.aq-barrow .track{flex:1; height:6px; border-radius:3px; background:var(--aq-track); overflow:hidden;}
+.aq-barrow .fill{height:100%; border-radius:3px;}
+.aq-barrow .val{width:44px; flex:none; text-align:right; font-family:ui-monospace,monospace; font-size:11px; font-weight:600; color:var(--aq-ink-0);}
+
+.aq-evalstats{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:14px;}
+.aq-evalstat .k{font-size:10.5px; color:var(--aq-ink-2);}
+.aq-evalstat .v{font-family:Charter,Georgia,serif; font-weight:600; font-size:19px; color:var(--aq-ink-0); margin-top:4px;}
+
+/* ---------- NEW: "AI Trust Center" business view (roadmap item 2) ---------- */
+.aq-viewtabs{display:flex; gap:7px;}
+.aq-viewtab{font-size:12px; font-weight:500; padding:7px 13px; border-radius:9px; border:1px solid var(--aq-panel-border); color:var(--aq-ink-2); background:var(--aq-panel); cursor:pointer; font-family:inherit;}
+.aq-viewtab.active{background:var(--aq-blue-soft); color:var(--aq-blue); border-color:var(--aq-blue-soft-2);}
+.aq-narrative{display:flex; align-items:flex-start; gap:14px; padding:18px 20px; margin-bottom:16px;}
+.aq-narrative .ic{width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; flex:none; background:var(--aq-blue-soft); color:var(--aq-blue);}
+.aq-narrative .txt{font-size:14px; color:var(--aq-ink-0); line-height:1.6;}
+.aq-narrative .txt b{color:var(--aq-blue);}
+.aq-narrative .sub{font-size:11.5px; color:var(--aq-ink-2); margin-top:6px;}

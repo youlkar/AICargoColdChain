@@ -1,0 +1,207 @@
+/*
+  Scoped styles for the redesigned Overview page (OverviewV2).
+  Everything is prefixed `.ov2-` / nested under `.ov2` so it can't collide with
+  the existing dashboard's global classes (.panel, .kpi, .tier-badge, etc).
+  Theme: dark values are the default; `html.light .ov2 {...}` overrides them,
+  matching the same `html.light` toggle mechanism the rest of the app uses.
+*/
+
+.ov2{
+  --ov2-bg-0:#12161a;
+  --ov2-panel:#171c21;
+  --ov2-panel-border:#262d33;
+  --ov2-hair:#212830;
+  --ov2-ink-0:#eef1f0;
+  --ov2-ink-1:#9ba7ab;
+  --ov2-ink-2:#67757a;
+  --ov2-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --ov2-blue:#5fb8b0;
+  --ov2-blue-soft:rgba(95,184,176,0.1);
+  --ov2-blue-soft-2:rgba(95,184,176,0.16);
+  --ov2-red:#e2807f;
+  --ov2-red-soft:rgba(226,128,127,0.1);
+  --ov2-red-soft-2:rgba(226,128,127,0.16);
+  --ov2-amber:#e0a856;
+  --ov2-amber-soft:rgba(224,168,86,0.1);
+  --ov2-yellow:#d9c46a;
+  --ov2-yellow-soft:rgba(217,196,106,0.1);
+  --ov2-green:#7bc499;
+  --ov2-green-soft:rgba(123,196,153,0.1);
+  --ov2-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--ov2-ink-0);
+  padding:24px 28px 60px;
+  max-width:1360px;
+  margin:0 auto;
+}
+
+html.light .ov2{
+  --ov2-bg-0:#f6f7f5;
+  --ov2-panel:#ffffff;
+  --ov2-panel-border:#e4e7e2;
+  --ov2-hair:#eef0ec;
+  --ov2-ink-0:#1c2321;
+  --ov2-ink-1:#54615c;
+  --ov2-ink-2:#8b968f;
+  --ov2-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --ov2-blue:#0d9488;
+  --ov2-blue-soft:rgba(13,148,136,0.09);
+  --ov2-blue-soft-2:rgba(13,148,136,0.15);
+  --ov2-red:#dc2626;
+  --ov2-red-soft:rgba(220,38,38,0.09);
+  --ov2-red-soft-2:rgba(220,38,38,0.15);
+  --ov2-amber:#ea580c;
+  --ov2-amber-soft:rgba(234,88,12,0.11);
+  --ov2-yellow:#ca8a04;
+  --ov2-yellow-soft:rgba(202,138,4,0.12);
+  --ov2-green:#16a34a;
+  --ov2-green-soft:rgba(22,163,74,0.1);
+  --ov2-track:#e9ece7;
+}
+
+.ov2-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+.ov2-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+
+/* header */
+.ov2-topbar{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px;}
+.ov2-title{font-family:Charter,"Iowan Old Style",Georgia,serif; font-weight:600; font-size:24px; margin:0; color:var(--ov2-ink-0); letter-spacing:-0.01em;}
+.ov2-sub{font-size:12.5px; color:var(--ov2-ink-2); margin-top:3px; display:flex; align-items:center; gap:7px;}
+.ov2-livedot{width:6px;height:6px;border-radius:50%;background:var(--ov2-green); flex:none;}
+.ov2-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.ov2-segtabs{display:flex; background:var(--ov2-bg-0); border:1px solid var(--ov2-panel-border); border-radius:9px; padding:3px; gap:2px;}
+.ov2-segtabs button{
+  font-size:12px; font-weight:500; padding:6px 14px; border-radius:6px;
+  border:none; background:transparent; color:var(--ov2-ink-2); cursor:pointer; font-family:inherit;
+}
+.ov2-segtabs button.ov2-active{background:var(--ov2-panel); color:var(--ov2-blue); box-shadow:var(--ov2-shadow);}
+.ov2-pill{
+  display:flex; align-items:center; gap:7px; padding:8px 13px; border-radius:9px;
+  border:1px solid var(--ov2-panel-border); background:var(--ov2-green-soft); color:var(--ov2-green);
+  font-size:12px; font-weight:500;
+}
+
+/* hero strip */
+.ov2-hero{
+  border-radius:16px; margin-bottom:16px; overflow:hidden;
+  border:1px solid var(--ov2-panel-border); background:var(--ov2-panel); box-shadow:var(--ov2-shadow);
+  padding:24px 6px;
+}
+.ov2-hero-grid{display:grid; grid-template-columns:1fr 1fr 1fr 1.1fr;}
+.ov2-hero-cell{padding:0 28px; border-right:1px solid var(--ov2-hair);}
+.ov2-hero-cell:last-child{border-right:none; display:flex; flex-direction:column; gap:9px; justify-content:center;}
+.ov2-hero-label{font-size:11px; font-weight:500; letter-spacing:0.03em; color:var(--ov2-ink-2); margin:0 0 8px; text-transform:uppercase;}
+.ov2-hero-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:32px; color:var(--ov2-ink-0); line-height:1;}
+.ov2-hero-foot{font-size:12px; color:var(--ov2-ink-2); margin-top:8px;}
+
+.ov2-btn{
+  display:flex; align-items:center; justify-content:center; gap:7px; padding:11px 16px; border-radius:9px;
+  font-size:13px; font-weight:600; cursor:pointer; border:1px solid transparent; text-decoration:none;
+  font-family:inherit;
+}
+.ov2-btn-primary{background:var(--ov2-blue); color:#fff;}
+.ov2-btn-danger{background:var(--ov2-red-soft); color:var(--ov2-red); border-color:var(--ov2-red-soft-2);}
+
+/* alert bar */
+.ov2-alertbar{
+  display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  padding:15px 18px; border-radius:13px; margin-bottom:16px;
+  background:var(--ov2-red-soft); border:1px solid var(--ov2-red-soft-2);
+}
+.ov2-alertbar-ok{background:var(--ov2-green-soft); border:1px solid var(--ov2-green-soft);}
+.ov2-alertbar .ov2-l{display:flex; align-items:center; gap:12px; min-width:0;}
+.ov2-alerticon{
+  width:32px;height:32px;border-radius:9px; background:var(--ov2-red-soft-2); display:flex; align-items:center;justify-content:center;
+  flex:none; color:var(--ov2-red);
+}
+.ov2-alertbar .ov2-t1{font-size:13.5px; font-weight:600; color:var(--ov2-ink-0);}
+.ov2-alertbar .ov2-t2{font-size:12px; color:var(--ov2-ink-1); margin-top:2px;}
+
+/* kpi row */
+.ov2-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;}
+.ov2-kpi{border-radius:14px; padding:17px 18px; background:var(--ov2-panel); border:1px solid var(--ov2-panel-border); box-shadow:var(--ov2-shadow);}
+.ov2-kpi-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+.ov2-kpi-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
+.ov2-kpi-trend{font-size:10.5px; font-weight:500; padding:4px 8px; border-radius:6px;}
+.ov2-kpi-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:26px; color:var(--ov2-ink-0);}
+.ov2-kpi-label{font-size:12px; color:var(--ov2-ink-2); margin-top:5px;}
+
+/* trio row */
+.ov2-trio{display:grid; grid-template-columns:1fr 2.3fr 1fr; gap:14px; margin-bottom:16px; align-items:stretch;}
+.ov2-panel{background:var(--ov2-panel); border:1px solid var(--ov2-panel-border); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:var(--ov2-shadow);}
+.ov2-panel-head{padding:15px 18px 12px; border-bottom:1px solid var(--ov2-hair);}
+.ov2-panel-head h2{font-family:Charter,Georgia,serif; font-weight:600; font-size:14.5px; margin:0; color:var(--ov2-ink-0);}
+.ov2-panel-head p{font-size:11px; color:var(--ov2-ink-2); margin:3px 0 0;}
+.ov2-panel-body{padding:15px 18px; flex:1;}
+
+.ov2-donut-wrap{display:flex; justify-content:center; margin-bottom:8px;}
+.ov2-legend-row{display:flex; align-items:center; justify-content:space-between; padding:6px 2px; font-size:12px;}
+.ov2-legend-row .ov2-l{display:flex; align-items:center; gap:8px; color:var(--ov2-ink-1);}
+.ov2-dot{width:7px;height:7px;border-radius:50%;flex:none;}
+
+.ov2-pulse-top{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+.ov2-pulse-ship{font-family:Charter,Georgia,serif; font-weight:600; font-size:16px;}
+.ov2-tier-badge{font-size:10.5px; font-weight:600; padding:4px 10px; border-radius:7px; white-space:nowrap;}
+.ov2-pulse-stats{display:flex; gap:26px; margin-top:12px; flex-wrap:wrap;}
+.ov2-pulse-stat .ov2-k{font-size:10.5px; color:var(--ov2-ink-2); text-transform:uppercase; letter-spacing:0.03em;}
+.ov2-pulse-stat .ov2-v{font-family:ui-monospace,monospace; font-size:15px; font-weight:600; margin-top:4px;}
+.ov2-pulse-chart{margin-top:18px; height:140px; position:relative;}
+
+.ov2-feed-item{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--ov2-hair);}
+.ov2-feed-item:last-child{border-bottom:none;}
+.ov2-chip{font-size:9.5px; font-weight:700; letter-spacing:0.03em; padding:3px 7px; border-radius:6px; flex:none; white-space:nowrap;}
+.ov2-feed-text{font-size:12px; color:var(--ov2-ink-1); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.ov2-feed-time{font-size:10.5px; color:var(--ov2-ink-2); flex:none; font-family:ui-monospace,monospace;}
+
+/* table */
+.ov2-tablecard{background:var(--ov2-panel); border:1px solid var(--ov2-panel-border); border-radius:14px; overflow:hidden; box-shadow:var(--ov2-shadow);}
+.ov2-table-head{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:17px 18px; border-bottom:1px solid var(--ov2-hair);}
+.ov2-filters{display:flex; gap:8px; flex-wrap:wrap;}
+.ov2-searchbox{display:flex; align-items:center; gap:7px; background:var(--ov2-bg-0); border:1px solid var(--ov2-panel-border); border-radius:9px; padding:8px 12px;}
+.ov2-searchbox svg{width:13px;height:13px;color:var(--ov2-ink-2); flex:none;}
+.ov2-searchbox input{background:transparent; border:none; outline:none; color:var(--ov2-ink-0); font-family:inherit; font-size:12.5px; width:130px;}
+.ov2-searchbox input::placeholder{color:var(--ov2-ink-2);}
+.ov2-select{background:var(--ov2-bg-0); border:1px solid var(--ov2-panel-border); border-radius:9px; padding:8px 11px; color:var(--ov2-ink-0); font-family:inherit; font-size:12.5px; outline:none; cursor:pointer;}
+.ov2-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+.ov2-table thead th{
+  text-align:left; font-size:10.5px; letter-spacing:0.03em; text-transform:uppercase; color:var(--ov2-ink-2);
+  padding:11px 15px; border-bottom:1px solid var(--ov2-hair); font-weight:600; background:var(--ov2-bg-0);
+}
+.ov2-table thead th:last-child, .ov2-table tbody td:last-child{text-align:right;}
+.ov2-table tbody td{padding:12px 15px; border-bottom:1px solid var(--ov2-hair); color:var(--ov2-ink-1);}
+.ov2-table tbody tr{cursor:pointer;}
+.ov2-table tbody tr:hover{background:var(--ov2-blue-soft);}
+.ov2-table tbody tr:last-child td{border-bottom:none;}
+.ov2-ship-id{color:var(--ov2-blue); font-weight:600; font-family:ui-monospace,monospace; display:inline-flex; align-items:center; gap:5px;}
+.ov2-score-bar-wrap{display:flex; align-items:center; gap:8px;}
+.ov2-score-track{width:56px; height:5px; border-radius:3px; background:var(--ov2-track); overflow:hidden;}
+.ov2-score-fill{height:100%; border-radius:3px;}
+.ov2-vrisk{color:var(--ov2-amber); font-weight:600; font-family:ui-monospace,monospace;}
+
+/* misc */
+.ov2-skel{border-radius:8px; background:var(--ov2-hair); animation:ov2-pulse 1.5s ease-in-out infinite;}
+@keyframes ov2-pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+.ov2-empty{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:48px 24px; color:var(--ov2-ink-2);}
+
+/* ---------- Executive View (roadmap item 2, merged into Overview) ---------- */
+.ov2-viewtabs{display:flex; gap:7px; flex-wrap:wrap;}
+.ov2-viewtab{font-size:12px; font-weight:500; padding:7px 13px; border-radius:9px; border:1px solid var(--ov2-panel-border); color:var(--ov2-ink-2); background:var(--ov2-panel); cursor:pointer; font-family:inherit;}
+.ov2-viewtab.ov2-active{background:var(--ov2-blue-soft); color:var(--ov2-blue); border-color:var(--ov2-blue-soft-2);}
+
+.ov2-narrative{display:flex; align-items:flex-start; gap:14px; padding:18px 20px; margin-bottom:16px;}
+.ov2-narrative .ic{width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; flex:none; background:var(--ov2-green-soft); color:var(--ov2-green);}
+.ov2-narrative .txt{font-size:14px; color:var(--ov2-ink-0); line-height:1.6;}
+.ov2-narrative .txt b{color:var(--ov2-green);}
+.ov2-narrative .sub{font-size:11.5px; color:var(--ov2-ink-2); margin-top:6px;}
+
+.ov2-trendrow{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;}
+.ov2-trendrow .figure{font-family:Charter,Georgia,serif; font-weight:700; font-size:24px; color:var(--ov2-ink-0);}
+.ov2-trendrow .delta{font-size:12px; font-weight:600; color:var(--ov2-green);}
+
+.ov2-winrow{display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid var(--ov2-hair);}
+.ov2-winrow:last-child{border-bottom:none;}
+.ov2-winicon{width:30px; height:30px; border-radius:9px; background:var(--ov2-green-soft); color:var(--ov2-green); display:flex; align-items:center; justify-content:center; flex:none;}
+.ov2-winrow .body{flex:1; min-width:0;}
+.ov2-winrow .headline{font-size:12.5px; color:var(--ov2-ink-0); font-weight:500; line-height:1.5;}
+.ov2-winrow .headline b{color:var(--ov2-green); font-weight:700;}
+.ov2-winrow .meta{font-size:10.5px; color:var(--ov2-ink-2); margin-top:3px;}

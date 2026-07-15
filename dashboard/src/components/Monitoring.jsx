@@ -1,41 +1,83 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApi, getApi } from '../hooks/useApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { Link } from 'react-router-dom';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
-  PieChart, Pie, RadarChart, PolarGrid, PolarAngleAxis, Radar,
-  AreaChart, Area,
-} from 'recharts';
-import { Activity, AlertTriangle, ThermometerSun, Zap, Shield, TrendingUp } from 'lucide-react';
-import TierBadge from './TierBadge';
-import { TIER_COLORS } from '../lib/colors';
-import { useTheme } from '../lib/ThemeContext';
+import { AlertTriangle } from 'lucide-react';
+import './monitoring-v2.css';
 
-const TIER_BORDER = {
-  CRITICAL: 'border-l-red-500 bg-red-500/[0.04]',
-  HIGH: 'border-l-orange-500 bg-orange-500/[0.03]',
-  MEDIUM: 'border-l-yellow-500 bg-yellow-500/[0.02]',
-  LOW: 'border-l-transparent',
+// Tier -> mon palette token mapping (soft bg + solid text/dot color) — same
+// system as OverviewV2 / the sidebar, kept local to this file since it's the
+// only page that needs it right now.
+const TIER_STYLE = {
+  CRITICAL: { bg: 'var(--mon-red-soft)', color: 'var(--mon-red)' },
+  HIGH:     { bg: 'var(--mon-amber-soft)', color: 'var(--mon-amber)' },
+  MEDIUM:   { bg: 'var(--mon-yellow-soft)', color: 'var(--mon-yellow)' },
+  LOW:      { bg: 'var(--mon-green-soft)', color: 'var(--mon-green)' },
 };
 
-function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
+function TierBadgeV2({ tier }) {
+  const s = TIER_STYLE[tier] || TIER_STYLE.LOW;
+  return <span className="mon-tier-badge" style={{ background: s.bg, color: s.color }}>{tier}</span>;
+}
+
+// Stacked bar for one transit phase's tier breakdown.
+function PhaseStackRow({ phase, critical = 0, high = 0, medium = 0, low = 0 }) {
+  const total = critical + high + medium + low;
+  const pct = n => (total > 0 ? (n / total) * 100 : 0);
   return (
-    <div className="glass-card-sm px-3 py-2 text-xs shadow-xl">
-      {label && <p className="font-semibold text-white mb-1">{label}</p>}
-      {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color || p.fill }}>
-          {p.name}: {typeof p.value === 'number' ? p.value.toLocaleString() : p.value}
-        </p>
-      ))}
+    <div className="mon-stackrow">
+      <span className="lbl">{phase}</span>
+      <div className="mon-stackbar">
+        {critical > 0 && <div className="mon-stackseg" style={{ width: `${pct(critical)}%`, background: 'var(--mon-red)' }} />}
+        {high > 0 && <div className="mon-stackseg" style={{ width: `${pct(high)}%`, background: 'var(--mon-amber)' }} />}
+        {medium > 0 && <div className="mon-stackseg" style={{ width: `${pct(medium)}%`, background: 'var(--mon-yellow)' }} />}
+        {low > 0 && <div className="mon-stackseg" style={{ width: `${pct(low)}%`, background: 'var(--mon-green)' }} />}
+      </div>
+      <span className="total">{total}</span>
     </div>
   );
 }
 
+// SVG area chart for the score histogram — same smooth-curve approach used by
+// OverviewV2's pulse chart, driven entirely by live analytics.score_histogram.
+function ScoreHistogram({ bins }) {
+  const { path, fill } = useMemo(() => {
+    if (!bins || bins.length < 2) return {};
+    const counts = bins.map(b => b.count);
+    const max = Math.max(...counts, 1);
+    const pts = counts.map((c, i) => ({
+      x: (i / (counts.length - 1)) * 300,
+      y: 150 - (c / max) * 130,
+    }));
+    const line = pts.reduce((d, p, i) => {
+      if (i === 0) return `M${p.x},${p.y}`;
+      const prev = pts[i - 1];
+      const mx = (prev.x + p.x) / 2;
+      return `${d} C${mx},${prev.y} ${mx},${p.y} ${p.x},${p.y}`;
+    }, '');
+    return { path: line, fill: `${line} L${pts.at(-1).x},150 L0,150 Z` };
+  }, [bins]);
+
+  if (!path) return <div className="mon-empty">Not enough histogram data yet.</div>;
+
+  return (
+    <svg width="100%" height="150" viewBox="0 0 300 150" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="mon-hist-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--mon-blue)" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="var(--mon-blue)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <line x1="0" y1="37" x2="300" y2="37" stroke="var(--mon-hair)" strokeDasharray="3 3" />
+      <line x1="0" y1="75" x2="300" y2="75" stroke="var(--mon-hair)" strokeDasharray="3 3" />
+      <line x1="0" y1="112" x2="300" y2="112" stroke="var(--mon-hair)" strokeDasharray="3 3" />
+      <path d={fill} fill="url(#mon-hist-grad)" />
+      <path d={path} fill="none" stroke="var(--mon-blue)" strokeWidth="2" />
+    </svg>
+  );
+}
+
 export default function Monitoring() {
-  const { theme } = useTheme();
-  const isLight = theme === 'light';
   const [feed, setFeed] = useState([]);
   const [page, setPage] = useState(0);
   const { data: analytics } = useApi('/analytics');
@@ -49,8 +91,6 @@ export default function Monitoring() {
 
   useEffect(() => { loadMore(); }, [loadMore]);
 
-  // Prepend newly-streamed, freshly-scored windows as they arrive over the
-  // existing /ws/events channel — no extra polling or DB reads involved.
   const latestLiveWindow = liveWindows[liveWindows.length - 1]?.result;
   useEffect(() => {
     if (!latestLiveWindow) return;
@@ -60,151 +100,136 @@ export default function Monitoring() {
   }, [latestLiveWindow]);
 
   const criticals = feed.filter(w => w.risk_tier === 'CRITICAL');
+  const maxAvgTemp = analytics?.temp_by_product?.length
+    ? Math.max(...analytics.temp_by_product.map(p => p.avg_temp), 1)
+    : 1;
 
   return (
-    <div className="p-6 max-w-[1440px] mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="mon">
+
+      {/* Header */}
+      <div className="mon-top">
         <div>
-          <h1 className="text-2xl font-bold text-white">Live Monitoring</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Real-time risk analytics across all shipments, containers, and windows</p>
+          <h1 className="mon-title">Live Monitoring</h1>
+          <p className="mon-sub">Real-time risk analytics across all shipments, containers, and windows</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
-            {connected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />}
-            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${connected ? 'bg-emerald-500' : 'bg-slate-500'}`} />
-          </span>
-          <span className={`text-xs font-medium ${connected ? 'text-emerald-400' : 'text-slate-500'}`}>
-            {connected ? 'Live' : 'Reconnecting…'}
-          </span>
+        <div className={`mon-livechip ${connected ? 'on' : 'off'}`}>
+          {connected ? (
+            <span className="mon-livepulse"><span className="ping" /><span className="core" /></span>
+          ) : (
+            <span className="mon-livepulse"><span className="core" style={{ background: 'var(--mon-ink-2)' }} /></span>
+          )}
+          {connected ? 'Live' : 'Reconnecting…'}
         </div>
       </div>
 
       {/* KPI strip */}
       {overview && (
-        <div className="grid grid-cols-5 gap-3">
-          <KPI icon={Activity} label="Escalated Windows" value={overview.total_windows.toLocaleString()} gradient="from-cyan-500 to-blue-600" />
-          <KPI icon={AlertTriangle} label="Critical" value={overview.tier_counts.CRITICAL || 0} gradient="from-red-500 to-rose-600" />
-          <KPI icon={Zap} label="High" value={overview.tier_counts.HIGH || 0} gradient="from-orange-500 to-amber-600" />
-          <KPI icon={ThermometerSun} label="Medium" value={overview.tier_counts.MEDIUM || 0} gradient="from-yellow-500 to-amber-500" />
-          <KPI icon={Shield} label="Low" value="Not tracked" gradient="from-emerald-500 to-green-600" />
+        <div className="mon-kpis">
+          <div className="mon-kpi">
+            <div className="mon-kpi-label">Escalated Windows</div>
+            <div className="mon-kpi-value">{overview.total_windows.toLocaleString()}</div>
+          </div>
+          <div className="mon-kpi">
+            <div className="mon-kpi-tag" style={{ background: 'var(--mon-red-soft)', color: 'var(--mon-red)' }}>!</div>
+            <div className="mon-kpi-label">Critical</div>
+            <div className="mon-kpi-value" style={{ color: 'var(--mon-red)' }}>{overview.tier_counts.CRITICAL || 0}</div>
+          </div>
+          <div className="mon-kpi">
+            <div className="mon-kpi-tag" style={{ background: 'var(--mon-amber-soft)', color: 'var(--mon-amber)' }}>!</div>
+            <div className="mon-kpi-label">High</div>
+            <div className="mon-kpi-value" style={{ color: 'var(--mon-amber)' }}>{overview.tier_counts.HIGH || 0}</div>
+          </div>
+          <div className="mon-kpi">
+            <div className="mon-kpi-label">Medium</div>
+            <div className="mon-kpi-value" style={{ color: 'var(--mon-yellow)' }}>{overview.tier_counts.MEDIUM || 0}</div>
+          </div>
+          <div className="mon-kpi">
+            <div className="mon-kpi-label">Low</div>
+            <div className="mon-kpi-value" style={{ color: 'var(--mon-green)', fontSize: 16 }}>Not tracked</div>
+          </div>
         </div>
       )}
 
       {/* Critical banner */}
       {criticals.length > 0 && (
-        <div className="relative overflow-hidden rounded-2xl border border-red-500/20 bg-gradient-to-r from-red-500/10 via-red-600/5 to-transparent p-4">
-          <div className="relative flex items-center gap-3">
-            <div className="rounded-full bg-red-500/20 p-2">
-              <AlertTriangle className="w-5 h-5 text-red-400 animate-pulse" />
-            </div>
+        <div className="mon-alertbar">
+          <div className="l">
+            <div className="mon-alerticon"><AlertTriangle style={{ width: 16, height: 16 }} /></div>
             <div>
-              <p className="font-semibold text-red-300">{criticals.length} CRITICAL windows in view</p>
-              <p className="text-sm text-red-400/70">Immediate action required — go to Agent Activity to orchestrate</p>
+              <p className="t1">{criticals.length} CRITICAL windows in view</p>
+              <p className="t2">Immediate action required — go to Agent Activity to orchestrate</p>
             </div>
           </div>
+          <Link to="/agent-v2" className="mon-btn mon-btn-danger">Orchestrate →</Link>
         </div>
       )}
 
-      {/* Analytics Charts */}
+      {/* Analytics charts */}
       {analytics && (
-        <div className="grid grid-cols-3 gap-5">
-          {/* Risk by Transit Phase */}
-          <div className="glass-card p-5 animate-slide-up">
-            <h2 className="text-sm font-semibold text-slate-300 mb-1">Risk by Transit Phase</h2>
-            <p className="text-[10px] text-slate-500 mb-3">Window counts per phase, stacked by tier</p>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={analytics.phase_stats} margin={{ bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
-                <XAxis dataKey="phase" tick={{ fontSize: 9, fill: '#64748b' }} stroke="transparent" angle={-25} textAnchor="end" />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="critical" stackId="a" fill="#ef4444" name="Critical" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="high" stackId="a" fill="#f97316" name="High" />
-                <Bar dataKey="medium" stackId="a" fill="#eab308" name="Medium" />
-                <Bar dataKey="low" stackId="a" fill="#22c55e" name="Low" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        <div className="mon-charts3">
+          <div className="mon-panel">
+            <h2 className="mon-panel-h">Risk by Transit Phase</h2>
+            <p className="mon-panel-sub">Window counts per phase, stacked by tier</p>
+            {(analytics.phase_stats || []).map(p => <PhaseStackRow key={p.phase} {...p} />)}
+            <div className="mon-stacklegend">
+              <span><span className="dot" style={{ background: 'var(--mon-red)' }} />Critical</span>
+              <span><span className="dot" style={{ background: 'var(--mon-amber)' }} />High</span>
+              <span><span className="dot" style={{ background: 'var(--mon-yellow)' }} />Medium</span>
+              <span><span className="dot" style={{ background: 'var(--mon-green)' }} />Low</span>
+            </div>
           </div>
 
-          {/* Score Distribution */}
-          <div className="glass-card p-5 animate-slide-up" style={{ animationDelay: '80ms' }}>
-            <h2 className="text-sm font-semibold text-slate-300 mb-1">Score Distribution</h2>
-            <p className="text-[10px] text-slate-500 mb-3">Histogram of fused risk scores (0–1)</p>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={analytics.score_histogram} margin={{ bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
-                <XAxis dataKey="bin_start" tick={{ fontSize: 9, fill: '#64748b' }} stroke="transparent" />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
-                <Tooltip content={<ChartTooltip />} />
-                <defs>
-                  <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area type="monotone" dataKey="count" stroke="#8b5cf6" fill="url(#scoreGrad)" strokeWidth={2} name="Windows" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="mon-panel">
+            <h2 className="mon-panel-h">Score Distribution</h2>
+            <p className="mon-panel-sub">Histogram of fused risk scores (0–1)</p>
+            <ScoreHistogram bins={analytics.score_histogram} />
           </div>
 
-          {/* Temperature by Product */}
-          <div className="glass-card p-5 animate-slide-up" style={{ animationDelay: '160ms' }}>
-            <h2 className="text-sm font-semibold text-slate-300 mb-1">Temperature by Product</h2>
-            <p className="text-[10px] text-slate-500 mb-3">Average temp and critical % per product type</p>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={analytics.temp_by_product} layout="vertical" margin={{ left: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} stroke="transparent" />
-                <YAxis type="category" dataKey="product_id" tick={{ fontSize: 10, fill: '#94a3b8' }} width={35} stroke="transparent" />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="avg_temp" fill="#06b6d4" name="Avg Temp (°C)" radius={[0, 4, 4, 0]}>
-                  {analytics.temp_by_product.map((d, i) => (
-                    <Cell key={i} fill={d.critical_pct > 20 ? '#ef4444' : d.critical_pct > 5 ? '#f97316' : '#06b6d4'} fillOpacity={0.7} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mon-panel">
+            <h2 className="mon-panel-h">Temperature by Product</h2>
+            <p className="mon-panel-sub">Avg temp and critical % per product</p>
+            {(analytics.temp_by_product || []).map(p => {
+              const color = p.critical_pct > 20 ? 'var(--mon-red)' : p.critical_pct > 5 ? 'var(--mon-amber)' : 'var(--mon-blue)';
+              return (
+                <div key={p.product_id} className="mon-barrow">
+                  <span className="lbl">{p.product_id}</span>
+                  <div className="track"><div className="fill" style={{ width: `${Math.min((p.avg_temp / maxAvgTemp) * 100, 100)}%`, background: color }} /></div>
+                  <span className="val">{p.avg_temp.toFixed(1)}°</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Container-level view + Risk Feed side by side */}
-      <div className="grid grid-cols-5 gap-5">
-        {/* Container Heat Map */}
+      {/* Container heatmap + Window risk feed */}
+      <div className="mon-lists">
+        {/* Container heatmap */}
         {analytics && (
-          <div className="col-span-2 glass-card overflow-hidden animate-slide-up" style={{ animationDelay: '240ms' }}>
-            <div className="px-5 py-3.5 border-b border-white/[0.06]">
-              <h2 className="text-sm font-semibold text-slate-300">Top-Risk Containers</h2>
-              <p className="text-[10px] text-slate-500">Shipment → Container → Window breakdown</p>
+          <div className="mon-panel" style={{ padding: 0 }}>
+            <div className="mon-listhead">
+              <div>
+                <h2 className="mon-panel-h">Top-Risk Containers</h2>
+                <p className="mon-panel-sub" style={{ marginBottom: 0 }}>Shipment → Container → Window breakdown</p>
+              </div>
             </div>
-            <div className="divide-y divide-white/[0.04] max-h-[500px] overflow-y-auto scrollbar-thin">
-              {analytics.container_stats.slice(0, 30).map((c, i) => (
-                <div key={`${c.shipment_id}-${c.container_id}`}
-                     className={`px-5 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition animate-fade-in`}
-                     style={{ animationDelay: `${i * 15}ms` }}>
-                  <TierBadge tier={c.risk_tier} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Link to={`/shipments/${c.shipment_id}`} className="text-xs text-cyan-400 hover:text-cyan-300 font-medium">{c.shipment_id}</Link>
-                      <span className="text-[11px] text-slate-400 font-mono">{c.container_id}</span>
-                      <span className="text-[10px] text-slate-600">{c.product_id}</span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500">
-                      <span>{c.windows} wins</span>
-                      {c.critical_windows > 0 && <span className="text-red-400">{c.critical_windows} crit</span>}
-                      {c.high_windows > 0 && <span className="text-orange-400">{c.high_windows} high</span>}
-                      <span>Avg: {c.avg_temp}°C</span>
-                    </div>
+            <div className="mon-listbody">
+              {analytics.container_stats.slice(0, 30).map(c => (
+                <div key={`${c.shipment_id}-${c.container_id}`} className="mon-row" style={{ borderLeftColor: TIER_STYLE[c.risk_tier]?.color }}>
+                  <TierBadgeV2 tier={c.risk_tier} />
+                  <div className="grow">
+                    <Link to={`/shipments/${c.shipment_id}`} className="ship">{c.shipment_id}</Link>
+                    <span className="mon-mono">{c.container_id}</span>
+                    <span>{c.product_id}</span>
+                    <span>{c.windows} wins</span>
+                    {c.critical_windows > 0 && <span style={{ color: 'var(--mon-red)' }}>{c.critical_windows} crit</span>}
+                    {c.high_windows > 0 && <span style={{ color: 'var(--mon-amber)' }}>{c.high_windows} high</span>}
+                    <span>Avg: {c.avg_temp}°C</span>
                   </div>
-                  {/* Mini score bar */}
-                  <div className="w-16 shrink-0">
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: isLight ? '#e2e8f0' : '#1e293b' }}>
-                      <div className="h-full rounded-full" style={{
-                        width: `${Math.min(c.max_score * 100, 100)}%`,
-                        backgroundColor: TIER_COLORS[c.risk_tier] || '#64748b',
-                      }} />
-                    </div>
-                    <p className="text-[10px] font-mono text-slate-400 text-center mt-0.5">{c.max_score.toFixed(3)}</p>
+                  <div className="miniscore">
+                    <div className="track"><div className="fill" style={{ width: `${Math.min(c.max_score * 100, 100)}%`, background: TIER_STYLE[c.risk_tier]?.color }} /></div>
+                    <div className="num">{c.max_score.toFixed(3)}</div>
                   </div>
                 </div>
               ))}
@@ -212,59 +237,38 @@ export default function Monitoring() {
           </div>
         )}
 
-        {/* Window Risk Feed */}
-        <div className="col-span-3 glass-card overflow-hidden animate-slide-up" style={{ animationDelay: '300ms' }}>
-          <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between">
+        {/* Window risk feed */}
+        <div className="mon-panel" style={{ padding: 0 }}>
+          <div className="mon-listhead">
             <div>
-              <h2 className="text-sm font-semibold text-slate-300">Window Risk Feed</h2>
-              <p className="text-[10px] text-slate-500">{feed.length} windows loaded, sorted by risk score</p>
+              <h2 className="mon-panel-h">Window Risk Feed</h2>
+              <p className="mon-panel-sub" style={{ marginBottom: 0 }}>{feed.length} windows loaded, sorted by risk score</p>
             </div>
-            <TrendingUp className="w-4 h-4 text-slate-600" />
           </div>
-          <div className="divide-y divide-white/[0.04] max-h-[500px] overflow-y-auto scrollbar-thin">
-            {feed.map((w, i) => (
-              <div key={w.window_id}
-                className={`px-5 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition border-l-4 ${TIER_BORDER[w.risk_tier] || 'border-l-transparent'}`}>
-                <TierBadge tier={w.risk_tier} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-white">{w.window_id}</span>
-                    <Link to={`/shipments/${w.shipment_id}`} className="text-[10px] text-cyan-400 hover:text-cyan-300">{w.shipment_id}</Link>
-                    <span className="text-[10px] text-slate-500">{w.container_id}</span>
-                    <span className="text-[10px] text-slate-600">{w.product_id}</span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500">
-                    <span>Temp: <span className="text-slate-300 font-mono">{w.avg_temp_c?.toFixed(1)}°C</span></span>
-                    <span>Phase: <span className="text-slate-400">{w.transit_phase}</span></span>
-                    {w.det_rules_fired && <span className="text-orange-400/80 truncate max-w-[180px]">{w.det_rules_fired}</span>}
-                  </div>
+          <div className="mon-listbody">
+            {feed.map(w => (
+              <div key={w.window_id} className="mon-row" style={{ borderLeftColor: TIER_STYLE[w.risk_tier]?.color }}>
+                <div className="rid"><div className="w">{w.window_id}</div></div>
+                <div className="grow">
+                  <Link to={`/shipments/${w.shipment_id}`} className="ship">{w.shipment_id}</Link>
+                  <span>{w.container_id}</span>
+                  <span>Temp: {w.avg_temp_c?.toFixed(1)}°C</span>
+                  <span>Phase: {w.transit_phase}</span>
+                  {w.det_rules_fired && <span style={{ color: 'var(--mon-amber)' }}>{w.det_rules_fired}</span>}
                 </div>
-                <div className="text-right shrink-0 w-20">
-                  <p className="font-mono text-xs font-bold text-white">{w.final_score?.toFixed(4)}</p>
-                  <p className="text-[9px] text-slate-500 font-mono">D:{w.det_score?.toFixed(2)} ML:{w.ml_score?.toFixed(2)}</p>
+                <div className="score">
+                  <div className="v" style={{ color: TIER_STYLE[w.risk_tier]?.color }}>{w.final_score?.toFixed(4)}</div>
+                  <div className="sub">D:{w.det_score?.toFixed(2)} ML:{w.ml_score?.toFixed(2)}</div>
                 </div>
               </div>
             ))}
           </div>
-          <div className="px-5 py-3 border-t border-white/[0.06] text-center">
-            <button onClick={() => setPage(p => p + 1)} className="text-sm text-cyan-400 hover:text-cyan-300 font-medium transition">Load more</button>
+          <div className="mon-loadmore">
+            <button type="button" onClick={() => setPage(p => p + 1)}>Load more</button>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-function KPI({ icon: Icon, label, value, gradient }) {
-  return (
-    <div className="glass-card-sm p-3 flex items-center gap-3">
-      <div className={`rounded-lg p-2 bg-gradient-to-br ${gradient} shrink-0`}>
-        <Icon className="w-4 h-4 text-white" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] text-slate-500 uppercase tracking-wide leading-tight truncate">{label}</p>
-        <p className="text-lg font-bold text-white leading-tight tabular-nums">{value}</p>
-      </div>
     </div>
   );
 }
