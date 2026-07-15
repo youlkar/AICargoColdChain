@@ -640,17 +640,46 @@ def score_window(window_id: str):
 
 
 # Audit logs
+def _record_timestamp(r: dict) -> Optional[pd.Timestamp]:
+    # Timestamp field name differs by record type: compliance records
+    # from audit_*.jsonl use assessment_timestamp; guardrail_findings
+    # and compliance_events use timestamp.
+    ts = r.get("assessment_timestamp") or r.get("timestamp")
+    if not ts:
+        return None
+    try:
+        parsed = pd.Timestamp(ts)
+    except (ValueError, TypeError):
+        return None
+    return parsed.tz_localize("UTC") if parsed.tzinfo is None else parsed.tz_convert("UTC")
+
+
 @app.get("/api/audit-logs")
 def list_audit_logs(
     shipment_id: Optional[str] = Query(None),
     risk_tier: Optional[str] = Query(None),
     limit: int = Query(100, le=1000),
+    hours: Optional[int] = None,
 ):
     records = _load_audit_records()
     if shipment_id:
         records = [r for r in records if r.get("shipment_id") == shipment_id]
     if risk_tier:
         records = [r for r in records if r.get("risk_tier") == risk_tier]
+    if hours:
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
+        records = [r for r in records if (ts := _record_timestamp(r)) is not None and ts >= cutoff]
+
+    # Sort most-recent-first before truncating to `limit`. Without this,
+    # ~82k stale records from old audit_*.jsonl batch-scoring runs (loaded
+    # first by _load_audit_records) crowd out every real, recent record
+    # from compliance_events.jsonl/guardrail_findings.jsonl — those would
+    # never survive the [:limit] slice otherwise.
+    records = sorted(
+        records,
+        key=lambda r: _record_timestamp(r) or pd.Timestamp.min.tz_localize("UTC"),
+        reverse=True,
+    )
     return records[:limit]
 
 
@@ -674,9 +703,19 @@ def pending_approvals():
 
 
 @app.get("/api/approvals/all")
-def all_approvals():
+def all_approvals(hours: Optional[int] = None):
     # Return ALL approvals (pending, approved, rejected, executed).
-    return get_all_approvals()
+    items = get_all_approvals()
+    if hours:
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
+        def _created_at(a: dict) -> Optional[pd.Timestamp]:
+            ts = a.get("created_at")
+            if not ts:
+                return None
+            parsed = pd.Timestamp(ts)
+            return parsed.tz_localize("UTC") if parsed.tzinfo is None else parsed.tz_convert("UTC")
+        items = [a for a in items if (ts := _created_at(a)) is not None and ts >= cutoff]
+    return items
 
 
 @app.delete("/api/approvals")
@@ -694,12 +733,26 @@ async def decide_approval(approval_id: str, body: ApprovalDecision):
     if "error" in result:
         raise HTTPException(404, result["error"])
 
-    window_id = result.get("window_id") or result.get("shipment_id", "")
+    # Match by approval_id, not window_id: the same window can be run (and
+    # paused for approval) multiple times across a session, producing
+    # multiple history entries with the same window_id. Matching on
+    # window_id with break-on-first-match mutates whichever entry for that
+    # window happens to be earliest in history — not necessarily the one
+    # actually being decided here.
     for entry in _orchestrator_history:
-        entry_wid = entry.get("_window_id") or entry.get("window_id", "")
-        if entry_wid == window_id and entry.get("requires_approval"):
+        entry_approval_id = entry.get("approval_id") or entry.get("_approval_id")
+        if entry_approval_id == approval_id:
             entry["_approval_status"] = body.decision
             entry["_approved_by"] = body.decided_by
+            if body.decision == "rejected":
+                # Rejection is terminal — unlike approval, no confirm/execute
+                # call follows it. Without this, runStatusSemantic() (frontend)
+                # keeps reading awaiting_approval=True forever and the run
+                # shows "Awaiting" indefinitely even though it's fully decided.
+                entry["awaiting_approval"] = False
+                entry["_execution_mode"] = "rejected"
+                entry["review_status"] = "rejected"
+                await asyncio.to_thread(_persist_history_entry, entry)
             break
 
     await _broadcast({"type": "approval_decided", "result": result})
@@ -968,8 +1021,15 @@ async def orchestrate_batch(window_ids: List[str]):
 
 
 @app.get("/api/orchestrator/history")
-def orchestrator_history(limit: int = Query(50, le=200)):
-    return list(reversed(_orchestrator_history[-limit:]))
+def orchestrator_history(limit: int = Query(50, le=200), hours: Optional[int] = None):
+    history = _orchestrator_history
+    if hours:
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
+        history = [
+            d for d in history
+            if (ts := _decision_timestamp(d)) is not None and ts >= cutoff
+        ]
+    return list(reversed(history[-limit:]))
 
 
 @app.delete("/api/orchestrator/history")

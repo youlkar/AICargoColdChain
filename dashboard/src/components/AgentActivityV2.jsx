@@ -41,8 +41,8 @@ const TIER_DOT = {
 };
 const SCORE_COLOR = TIER_DOT;
 
-const STATUS_LABEL = { crit: 'Awaiting', warn: 'Corrections', ok: 'Resolved', info: 'No actions' };
-const STATUS_TONE = { crit: 'amber', warn: 'amber', ok: 'green', info: null };
+const STATUS_LABEL = { crit: 'Awaiting', warn: 'Corrections', ok: 'Resolved', info: 'No actions', rejected: 'Rejected' };
+const STATUS_TONE = { crit: 'amber', warn: 'amber', ok: 'green', info: null, rejected: 'red' };
 
 const FILTERS = [
   { id: 'all',      label: 'All',      predicate: () => true },
