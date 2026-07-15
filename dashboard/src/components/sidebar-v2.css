@@ -1,0 +1,71 @@
+/*
+  Redesigned collapsible app sidebar — matches the "Clinical Calm" mockup design
+  system (calm teal accent, serif wordmark, soft shadows) rather than the old
+  cyan/glass look. Scoped with `--sb-*` variables on `.sidebar-v2` so it doesn't
+  touch the app's existing `--accent-cyan` etc. tokens used elsewhere.
+  Light/dark values follow the same `html.light` toggle the rest of the app uses.
+*/
+
+.sidebar-v2{
+  --sb-bg:#171c21;
+  --sb-border:#262d33;
+  --sb-hair:#212830;
+  --sb-ink-0:#eef1f0;
+  --sb-ink-1:#9ba7ab;
+  --sb-ink-2:#67757a;
+  --sb-blue:#5fb8b0;
+  --sb-blue-soft:rgba(95,184,176,0.12);
+  --sb-red:#e2807f;
+
+  width:232px; flex:none; display:flex; flex-direction:column; height:100vh;
+  position:sticky; top:0; background:var(--sb-bg); border-right:1px solid var(--sb-border);
+  transition:width .18s ease; overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+html.light .sidebar-v2{
+  --sb-bg:#ffffff;
+  --sb-border:#e4e7e2;
+  --sb-hair:#eef0ec;
+  --sb-ink-0:#1c2321;
+  --sb-ink-1:#54615c;
+  --sb-ink-2:#8b968f;
+  --sb-blue:#0d9488;
+  --sb-blue-soft:rgba(13,148,136,0.1);
+  --sb-red:#dc2626;
+}
+.sidebar-v2.collapsed{ width:60px; }
+
+.sb-top{display:flex; align-items:center; gap:10px; padding:16px 14px; border-bottom:1px solid var(--sb-hair); flex:none;}
+/* Collapsed: brand icon + collapse button no longer fit on one row at 60px wide —
+   stack them instead of letting the button overflow and get clipped (unclickable). */
+.sidebar-v2.collapsed .sb-top{flex-direction:column; justify-content:center; gap:10px; padding:14px 6px;}
+.sb-brandmark{width:30px; height:30px; border-radius:9px; background:var(--sb-blue-soft); color:var(--sb-blue); display:flex; align-items:center; justify-content:center; flex:none;}
+.sb-brand-text{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif; font-weight:600; font-size:14.5px; color:var(--sb-ink-0); white-space:nowrap; overflow:hidden; flex:1;}
+.sb-collapse-btn{width:24px; height:24px; border-radius:7px; border:1px solid var(--sb-border); background:transparent; color:var(--sb-ink-2); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;}
+.sb-collapse-btn svg{transition:transform .18s ease;}
+.sidebar-v2.collapsed .sb-collapse-btn svg{transform:rotate(180deg);}
+
+.sb-nav{flex:1; overflow-y:auto; overflow-x:hidden; padding:12px 10px;}
+.sb-section-lbl{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--sb-ink-2); margin:2px 11px 6px; white-space:nowrap; overflow:hidden;}
+.sidebar-v2.collapsed .sb-section-lbl{display:none;}
+
+.sb-item{position:relative; display:flex; align-items:center; gap:11px; width:100%; padding:9px 11px; border-radius:9px; color:var(--sb-ink-1); font-size:13px; font-weight:500; margin-bottom:2px; white-space:nowrap; text-decoration:none; transition:background .12s ease, color .12s ease;}
+.sb-item svg{width:16px; height:16px; flex:none;}
+.sb-item:hover{background:color-mix(in oklab, var(--sb-ink-0) 6%, transparent);}
+.sb-item.active{background:var(--sb-blue-soft); color:var(--sb-blue); font-weight:600;}
+.sb-item .sb-badge{margin-left:auto; padding:1px 6px; border-radius:20px; font-size:10px; font-weight:700; background:var(--sb-red); color:#fff; flex:none;}
+
+.sidebar-v2.collapsed .sb-brand-text,
+.sidebar-v2.collapsed .sb-item span:not(.sb-badge){display:none;}
+.sidebar-v2.collapsed .sb-item{justify-content:center;}
+.sidebar-v2.collapsed .sb-item .sb-badge{position:absolute; top:2px; right:2px; margin-left:0;}
+
+.sb-bottom{padding:12px 14px; border-top:1px solid var(--sb-hair); flex:none;}
+.sb-themetoggle{display:flex; align-items:center; background:color-mix(in oklab, var(--sb-ink-0) 4%, transparent); border:1px solid var(--sb-border); border-radius:9px; padding:3px; gap:2px;}
+.sb-themetoggle button{flex:1; display:flex; align-items:center; justify-content:center; padding:7px 0; border:none; background:transparent; border-radius:6px; cursor:pointer; color:var(--sb-ink-2);}
+.sb-themetoggle button.active{background:var(--sb-bg); color:var(--sb-blue); box-shadow:0 1px 2px rgba(0,0,0,0.15);}
+.sidebar-v2.collapsed .sb-themetoggle{flex-direction:column;}
+
+.sb-footer-text{font-size:10px; color:var(--sb-ink-2); margin-top:10px; line-height:1.5;}
+.sidebar-v2.collapsed .sb-footer-text,
+.sidebar-v2.collapsed .sb-llmbadge{display:none;}

@@ -1,0 +1,135 @@
+/*
+  Scoped styles for the redesigned Monitoring page.
+  Prefixed `.mon-` / nested under `.mon` so it can't collide with the app's
+  existing global classes. Same "Clinical Calm" tokens/mechanism as
+  overview-v2.css and sidebar-v2.css (dark default, `html.light .mon` override).
+*/
+
+.mon{
+  --mon-bg-0:#12161a;
+  --mon-panel:#171c21;
+  --mon-panel-border:#262d33;
+  --mon-hair:#212830;
+  --mon-ink-0:#eef1f0;
+  --mon-ink-1:#9ba7ab;
+  --mon-ink-2:#67757a;
+  --mon-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --mon-blue:#5fb8b0;
+  --mon-blue-soft:rgba(95,184,176,0.1);
+  --mon-red:#e2807f;
+  --mon-red-soft:rgba(226,128,127,0.1);
+  --mon-red-soft-2:rgba(226,128,127,0.16);
+  --mon-amber:#e0a856;
+  --mon-amber-soft:rgba(224,168,86,0.1);
+  --mon-yellow:#d9c46a;
+  --mon-yellow-soft:rgba(217,196,106,0.1);
+  --mon-green:#7bc499;
+  --mon-green-soft:rgba(123,196,153,0.1);
+  --mon-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--mon-ink-0);
+  padding:24px 28px 60px;
+  max-width:1440px;
+  margin:0 auto;
+}
+
+html.light .mon{
+  --mon-bg-0:#f6f7f5;
+  --mon-panel:#ffffff;
+  --mon-panel-border:#e4e7e2;
+  --mon-hair:#eef0ec;
+  --mon-ink-0:#1c2321;
+  --mon-ink-1:#54615c;
+  --mon-ink-2:#8b968f;
+  --mon-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --mon-blue:#0d9488;
+  --mon-blue-soft:rgba(13,148,136,0.09);
+  --mon-red:#dc2626;
+  --mon-red-soft:rgba(220,38,38,0.09);
+  --mon-red-soft-2:rgba(220,38,38,0.15);
+  --mon-amber:#ea580c;
+  --mon-amber-soft:rgba(234,88,12,0.11);
+  --mon-yellow:#ca8a04;
+  --mon-yellow-soft:rgba(202,138,4,0.12);
+  --mon-green:#16a34a;
+  --mon-green-soft:rgba(22,163,74,0.1);
+  --mon-track:#e9ece7;
+}
+
+.mon-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+.mon-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+
+/* header */
+.mon-top{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px;}
+.mon-title{font-family:Charter,"Iowan Old Style",Georgia,serif; font-weight:600; font-size:24px; margin:0; color:var(--mon-ink-0); letter-spacing:-0.01em;}
+.mon-sub{font-size:12.5px; color:var(--mon-ink-2); margin-top:3px;}
+.mon-livechip{display:flex; align-items:center; gap:8px; padding:8px 13px; border-radius:9px; border:1px solid var(--mon-panel-border); font-size:12px; font-weight:500;}
+.mon-livechip.on{background:var(--mon-green-soft); color:var(--mon-green); border-color:var(--mon-green-soft);}
+.mon-livechip.off{color:var(--mon-ink-2);}
+.mon-livepulse{position:relative; display:inline-flex; width:8px; height:8px; flex:none;}
+.mon-livepulse .ping{position:absolute; inset:0; border-radius:50%; background:var(--mon-green); opacity:0.6; animation:mon-ping 1.6s cubic-bezier(0,0,0.2,1) infinite;}
+.mon-livepulse .core{position:relative; width:8px; height:8px; border-radius:50%; background:var(--mon-green);}
+@keyframes mon-ping{75%,100%{transform:scale(2.4); opacity:0;}}
+
+/* kpi row */
+.mon-kpis{display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:16px;}
+.mon-kpi{border-radius:14px; padding:16px 17px; background:var(--mon-panel); border:1px solid var(--mon-panel-border); box-shadow:var(--mon-shadow); position:relative;}
+.mon-kpi-tag{position:absolute; top:14px; right:14px; font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:6px;}
+.mon-kpi-label{font-size:10.5px; font-weight:500; color:var(--mon-ink-2); text-transform:uppercase; letter-spacing:0.03em;}
+.mon-kpi-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:24px; margin-top:8px; color:var(--mon-ink-0);}
+
+/* alert bar */
+.mon-alertbar{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:15px 18px; border-radius:13px; margin-bottom:16px; background:var(--mon-red-soft); border:1px solid var(--mon-red-soft-2);}
+.mon-alertbar .l{display:flex; align-items:center; gap:12px; min-width:0;}
+.mon-alerticon{width:32px; height:32px; border-radius:9px; background:var(--mon-red-soft-2); display:flex; align-items:center; justify-content:center; flex:none; color:var(--mon-red);}
+.mon-alertbar .t1{font-size:13.5px; font-weight:600; color:var(--mon-ink-0);}
+.mon-alertbar .t2{font-size:12px; color:var(--mon-ink-1); margin-top:2px;}
+.mon-btn{display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; border:1px solid transparent; text-decoration:none; font-family:inherit;}
+.mon-btn-danger{background:var(--mon-red-soft); color:var(--mon-red); border-color:var(--mon-red-soft-2);}
+
+/* charts row */
+.mon-charts3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:16px;}
+.mon-panel{background:var(--mon-panel); border:1px solid var(--mon-panel-border); border-radius:14px; box-shadow:var(--mon-shadow); padding:16px 18px;}
+.mon-panel-h{font-family:Charter,Georgia,serif; font-weight:600; font-size:13.5px; color:var(--mon-ink-0); margin:0;}
+.mon-panel-sub{font-size:10.5px; color:var(--mon-ink-2); margin:3px 0 12px;}
+
+.mon-stackrow{display:flex; align-items:center; gap:10px; padding:7px 0;}
+.mon-stackrow .lbl{width:70px; flex:none; font-size:11px; color:var(--mon-ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.mon-stackbar{flex:1; height:14px; border-radius:4px; overflow:hidden; display:flex; background:var(--mon-track);}
+.mon-stackseg{height:100%;}
+.mon-stackrow .total{width:32px; flex:none; text-align:right; font-family:ui-monospace,monospace; font-size:11px; color:var(--mon-ink-1);}
+.mon-stacklegend{display:flex; gap:14px; margin-top:10px; font-size:10.5px; color:var(--mon-ink-2); flex-wrap:wrap;}
+.mon-stacklegend .dot{display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:4px; vertical-align:1px;}
+
+.mon-barrow{display:flex; align-items:center; gap:10px; padding:6px 0;}
+.mon-barrow .lbl{width:64px; flex:none; font-size:11px; color:var(--mon-ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.mon-barrow .track{flex:1; height:5px; border-radius:3px; background:var(--mon-track); overflow:hidden;}
+.mon-barrow .fill{height:100%; border-radius:3px;}
+.mon-barrow .val{width:40px; flex:none; text-align:right; font-family:ui-monospace,monospace; font-size:11px; font-weight:600; color:var(--mon-ink-0);}
+
+/* two-col lists */
+.mon-lists{display:grid; grid-template-columns:2fr 3fr; gap:14px;}
+.mon-listhead{padding:15px 18px 12px; border-bottom:1px solid var(--mon-hair); display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.mon-listbody{max-height:460px; overflow-y:auto;}
+.mon-row{display:flex; align-items:center; gap:12px; padding:11px 18px; border-bottom:1px solid var(--mon-hair); border-left:3px solid transparent;}
+.mon-row:last-child{border-bottom:none;}
+.mon-row:hover{background:var(--mon-blue-soft);}
+.mon-row .rid{flex:0 0 84px;}
+.mon-row .rid .w{font-family:ui-monospace,monospace; font-size:12px; font-weight:700; color:var(--mon-ink-0);}
+.mon-row .grow{flex:1; min-width:0; font-size:11px; color:var(--mon-ink-2); display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.mon-row .grow .ship{color:var(--mon-blue); font-weight:600; text-decoration:none;}
+.mon-row .score{width:78px; flex:none; text-align:right;}
+.mon-row .score .v{font-family:ui-monospace,monospace; font-size:12.5px; font-weight:700; color:var(--mon-ink-0);}
+.mon-row .score .sub{font-size:9.5px; color:var(--mon-ink-2); font-family:ui-monospace,monospace;}
+.mon-row .miniscore{width:52px; flex:none;}
+.mon-row .miniscore .track{height:5px; border-radius:3px; background:var(--mon-track); overflow:hidden;}
+.mon-row .miniscore .fill{height:100%; border-radius:3px;}
+.mon-row .miniscore .num{font-size:9.5px; color:var(--mon-ink-2); text-align:center; margin-top:3px; font-family:ui-monospace,monospace;}
+
+.mon-loadmore{text-align:center; padding:12px; border-top:1px solid var(--mon-hair);}
+.mon-loadmore button{background:transparent; border:none; color:var(--mon-blue); font-weight:600; font-size:13px; cursor:pointer; font-family:inherit;}
+.mon-loadmore button:hover{text-decoration:underline;}
+
+.mon-tier-badge{font-size:10px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap; flex:none;}
+.mon-empty{padding:32px 18px; text-align:center; color:var(--mon-ink-2); font-size:12px;}

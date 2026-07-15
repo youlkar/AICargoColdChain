@@ -1,0 +1,152 @@
+/*
+  Scoped styles shared by the redesigned Shipments list + Shipment Detail pages.
+  Prefixed `.ship-` / nested under `.ship` — same "Clinical Calm" token/mechanism
+  as the other redesigned pages (dark default, `html.light .ship` override).
+*/
+
+.ship{
+  --ship-bg-0:#12161a;
+  --ship-panel:#171c21;
+  --ship-panel-border:#262d33;
+  --ship-hair:#212830;
+  --ship-ink-0:#eef1f0;
+  --ship-ink-1:#9ba7ab;
+  --ship-ink-2:#67757a;
+  --ship-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --ship-blue:#5fb8b0;
+  --ship-blue-soft:rgba(95,184,176,0.1);
+  --ship-blue-soft-2:rgba(95,184,176,0.16);
+  --ship-red:#e2807f;
+  --ship-red-soft:rgba(226,128,127,0.1);
+  --ship-amber:#e0a856;
+  --ship-amber-soft:rgba(224,168,86,0.1);
+  --ship-yellow:#d9c46a;
+  --ship-yellow-soft:rgba(217,196,106,0.1);
+  --ship-green:#7bc499;
+  --ship-green-soft:rgba(123,196,153,0.1);
+  --ship-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--ship-ink-0);
+  padding:24px 28px 60px;
+  max-width:1440px;
+  margin:0 auto;
+}
+
+html.light .ship{
+  --ship-bg-0:#f6f7f5;
+  --ship-panel:#ffffff;
+  --ship-panel-border:#e4e7e2;
+  --ship-hair:#eef0ec;
+  --ship-ink-0:#1c2321;
+  --ship-ink-1:#54615c;
+  --ship-ink-2:#8b968f;
+  --ship-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --ship-blue:#0d9488;
+  --ship-blue-soft:rgba(13,148,136,0.09);
+  --ship-blue-soft-2:rgba(13,148,136,0.15);
+  --ship-red:#dc2626;
+  --ship-red-soft:rgba(220,38,38,0.09);
+  --ship-amber:#ea580c;
+  --ship-amber-soft:rgba(234,88,12,0.11);
+  --ship-yellow:#ca8a04;
+  --ship-yellow-soft:rgba(202,138,4,0.12);
+  --ship-green:#16a34a;
+  --ship-green-soft:rgba(22,163,74,0.1);
+  --ship-track:#e9ece7;
+}
+
+.ship-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+.ship-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+
+/* header */
+.ship-top{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px;}
+.ship-title{font-family:Charter,"Iowan Old Style",Georgia,serif; font-weight:600; font-size:24px; margin:0; color:var(--ship-ink-0); letter-spacing:-0.01em;}
+.ship-sub{font-size:12.5px; color:var(--ship-ink-2); margin-top:3px;}
+
+/* kpis */
+.ship-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;}
+.ship-kpi{border-radius:14px; padding:16px 17px; background:var(--ship-panel); border:1px solid var(--ship-panel-border); box-shadow:var(--ship-shadow); position:relative;}
+.ship-kpi-tag{position:absolute; top:14px; right:14px; font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:6px;}
+.ship-kpi-label{font-size:10.5px; font-weight:500; color:var(--ship-ink-2); text-transform:uppercase; letter-spacing:0.03em;}
+.ship-kpi-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:24px; margin-top:8px; color:var(--ship-ink-0);}
+
+/* filter bar */
+.ship-bar{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px;}
+.ship-tabs{display:flex; gap:7px; flex-wrap:wrap;}
+.ship-tab{font-size:12px; font-weight:500; padding:7px 13px; border-radius:9px; border:1px solid var(--ship-panel-border); color:var(--ship-ink-2); background:var(--ship-panel); cursor:pointer; font-family:inherit;}
+.ship-tab.active{background:var(--ship-blue-soft); color:var(--ship-blue); border-color:var(--ship-blue-soft-2);}
+.ship-tab strong{font-weight:700; margin-left:3px;}
+.ship-sorttoggle{display:flex; border:1px solid var(--ship-panel-border); border-radius:8px; overflow:hidden;}
+.ship-sorttoggle button{font-family:inherit; font-size:11.5px; font-weight:500; padding:7px 13px; border:none; background:var(--ship-panel); color:var(--ship-ink-2); cursor:pointer;}
+.ship-sorttoggle button.active{background:var(--ship-blue); color:#fff;}
+.ship-search{display:flex; align-items:center; gap:7px; background:var(--ship-bg-0); border:1px solid var(--ship-panel-border); border-radius:9px; padding:8px 12px; width:220px;}
+.ship-search svg{width:13px; height:13px; color:var(--ship-ink-2); flex:none;}
+.ship-search input{background:transparent; border:none; outline:none; color:var(--ship-ink-0); font-family:inherit; font-size:12.5px; width:100%;}
+.ship-search input::placeholder{color:var(--ship-ink-2);}
+
+/* shipment card */
+.ship-card{background:var(--ship-panel); border:1px solid var(--ship-panel-border); border-radius:14px; box-shadow:var(--ship-shadow); margin-bottom:12px; overflow:hidden;}
+.ship-head{display:flex; align-items:center; gap:16px; padding:16px 18px; cursor:pointer; text-decoration:none; color:inherit;}
+.ship-head:hover{background:var(--ship-blue-soft);}
+.ship-icon{width:36px; height:36px; border-radius:10px; background:var(--ship-blue-soft); color:var(--ship-blue); display:flex; align-items:center; justify-content:center; flex:none;}
+.ship-titleblock{flex:1; min-width:0;}
+.ship-idlink{font-family:ui-monospace,monospace; font-size:14.5px; font-weight:700; color:var(--ship-blue);}
+.ship-metarow{display:flex; align-items:center; gap:10px; margin-top:3px; font-size:11.5px; color:var(--ship-ink-2); flex-wrap:wrap;}
+.ship-metarow .sep{width:3px; height:3px; border-radius:50%; background:var(--ship-ink-2); flex:none;}
+.ship-donut{width:52px; height:52px; flex:none;}
+.ship-score{text-align:right; flex:none;}
+.ship-score .v{font-family:ui-monospace,monospace; font-size:17px; font-weight:700; color:var(--ship-ink-0);}
+.ship-score .k{font-size:10px; color:var(--ship-ink-2); margin-top:2px;}
+.ship-chev{width:16px; height:16px; color:var(--ship-ink-2); flex:none;}
+
+.ship-containers{border-top:1px solid var(--ship-hair); padding:10px 14px 14px;}
+.ship-containerrow{display:flex; align-items:center; gap:14px; padding:10px 14px; border-radius:10px;}
+.ship-containerrow:hover{background:var(--ship-bg-0);}
+.ship-containerrow .cid{font-family:ui-monospace,monospace; font-size:12px; font-weight:600; color:var(--ship-ink-0); flex:0 0 90px;}
+.ship-containerrow .cmeta{flex:1; min-width:0; display:flex; align-items:center; gap:10px; font-size:11px; color:var(--ship-ink-2); flex-wrap:wrap;}
+.ship-containerrow .cscore{width:110px; flex:none;}
+.ship-scorebar{display:flex; align-items:center; gap:8px;}
+.ship-scoretrack{flex:1; height:5px; border-radius:3px; background:var(--ship-track); overflow:hidden;}
+.ship-scorefill{height:100%; border-radius:3px;}
+
+.ship-tier{font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap;}
+.ship-tier-lg{font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:7px; white-space:nowrap;}
+
+.ship-empty{padding:48px 24px; text-align:center; color:var(--ship-ink-2);}
+.ship-empty svg{width:32px; height:32px; margin-bottom:10px; opacity:0.6;}
+.ship-empty .t{font-weight:600; color:var(--ship-ink-0); font-size:13px;}
+.ship-empty .d{font-size:12px; margin-top:4px;}
+
+/* ---------- shipment detail page ---------- */
+.ship-crumb{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ship-ink-2); margin-bottom:16px;}
+.ship-crumb a{color:var(--ship-ink-2); text-decoration:none; display:flex; align-items:center; gap:5px;}
+.ship-crumb a:hover{color:var(--ship-ink-0);}
+
+.ship-containertabs{display:flex; gap:7px; flex-wrap:wrap; margin-bottom:16px;}
+.ship-ctab{display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; padding:7px 13px; border-radius:20px; border:1px solid var(--ship-panel-border); color:var(--ship-ink-2); background:var(--ship-panel); cursor:pointer; font-family:inherit;}
+.ship-ctab.active{background:var(--ship-blue); color:#fff; border-color:var(--ship-blue);}
+.ship-ctab .dot{width:7px; height:7px; border-radius:50%; flex:none;}
+
+.ship-statgrid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;}
+.ship-statcard{background:var(--ship-panel); border:1px solid var(--ship-panel-border); border-radius:14px; box-shadow:var(--ship-shadow); padding:15px 16px;}
+.ship-statcard-lbl{font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--ship-ink-2); margin-bottom:10px;}
+.ship-statline{display:flex; justify-content:space-between; font-size:12px; padding:3px 0;}
+.ship-statline .k{color:var(--ship-ink-2);}
+.ship-statline .v{font-family:ui-monospace,monospace; font-weight:600; color:var(--ship-ink-0);}
+.ship-phaserow{display:flex; align-items:center; gap:9px; padding:5px 0;}
+.ship-phaserow .k{width:56px; flex:none; font-size:11.5px; color:var(--ship-ink-2); text-transform:capitalize; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.ship-phaserow .v{width:40px; flex:none; text-align:right; font-family:ui-monospace,monospace; font-size:11.5px; font-weight:600; color:var(--ship-ink-0);}
+
+.ship-charts2{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px;}
+.ship-chart-head{display:flex; align-items:center; gap:8px; margin-bottom:12px;}
+.ship-chart-head h2{font-family:Charter,Georgia,serif; font-weight:600; font-size:13.5px; margin:0; color:var(--ship-ink-0);}
+
+.ship-tablecard{background:var(--ship-panel); border:1px solid var(--ship-panel-border); border-radius:14px; overflow:hidden; box-shadow:var(--ship-shadow);}
+.ship-table-head{padding:15px 18px 12px; border-bottom:1px solid var(--ship-hair);}
+.ship-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+.ship-table thead th{text-align:left; font-size:10.5px; letter-spacing:0.03em; text-transform:uppercase; color:var(--ship-ink-2); padding:11px 15px; border-bottom:1px solid var(--ship-hair); font-weight:600; background:var(--ship-bg-0);}
+.ship-table tbody td{padding:10px 15px; border-bottom:1px solid var(--ship-hair); color:var(--ship-ink-1);}
+.ship-table tbody tr:last-child td{border-bottom:none;}
+.ship-table tbody tr:hover{background:var(--ship-blue-soft);}
+.ship-tablewrap{max-height:420px; overflow-y:auto;}

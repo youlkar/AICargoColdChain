@@ -1,0 +1,154 @@
+/*
+  Scoped styles for the redesigned Agent Activity page (/agent-v2).
+  Prefixed `.aav-` / nested under `.aav` — same "Clinical Calm" token/mechanism
+  as the other redesigned pages (dark default, `html.light .aav` override).
+*/
+
+.aav{
+  --aav-bg-0:#12161a;
+  --aav-panel:#171c21;
+  --aav-panel-border:#262d33;
+  --aav-hair:#212830;
+  --aav-ink-0:#eef1f0;
+  --aav-ink-1:#9ba7ab;
+  --aav-ink-2:#67757a;
+  --aav-shadow:0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.18);
+  --aav-blue:#5fb8b0;
+  --aav-blue-soft:rgba(95,184,176,0.1);
+  --aav-blue-soft-2:rgba(95,184,176,0.16);
+  --aav-red:#e2807f;
+  --aav-red-soft:rgba(226,128,127,0.1);
+  --aav-red-soft-2:rgba(226,128,127,0.16);
+  --aav-amber:#e0a856;
+  --aav-amber-soft:rgba(224,168,86,0.1);
+  --aav-yellow:#d9c46a;
+  --aav-yellow-soft:rgba(217,196,106,0.1);
+  --aav-green:#7bc499;
+  --aav-green-soft:rgba(123,196,153,0.1);
+  --aav-track:#232a30;
+
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  color:var(--aav-ink-0);
+  padding:24px 28px 60px;
+  max-width:1200px;
+  margin:0 auto;
+}
+
+html.light .aav{
+  --aav-bg-0:#f6f7f5;
+  --aav-panel:#ffffff;
+  --aav-panel-border:#e4e7e2;
+  --aav-hair:#eef0ec;
+  --aav-ink-0:#1c2321;
+  --aav-ink-1:#54615c;
+  --aav-ink-2:#8b968f;
+  --aav-shadow:0 1px 2px rgba(28,35,33,0.04), 0 1px 12px rgba(28,35,33,0.03);
+  --aav-blue:#0d9488;
+  --aav-blue-soft:rgba(13,148,136,0.09);
+  --aav-blue-soft-2:rgba(13,148,136,0.15);
+  --aav-red:#dc2626;
+  --aav-red-soft:rgba(220,38,38,0.09);
+  --aav-red-soft-2:rgba(220,38,38,0.15);
+  --aav-amber:#ea580c;
+  --aav-amber-soft:rgba(234,88,12,0.11);
+  --aav-yellow:#ca8a04;
+  --aav-yellow-soft:rgba(202,138,4,0.12);
+  --aav-green:#16a34a;
+  --aav-green-soft:rgba(22,163,74,0.1);
+  --aav-track:#e9ece7;
+}
+
+.aav-serif{font-family:Charter,"Iowan Old Style","Palatino Linotype",Georgia,serif;}
+.aav-mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+
+/* header */
+.aav-top{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:20px;}
+.aav-title{font-family:Charter,"Iowan Old Style",Georgia,serif; font-weight:600; font-size:24px; margin:0; color:var(--aav-ink-0); letter-spacing:-0.01em;}
+.aav-sub{font-size:12.5px; color:var(--aav-ink-2); margin-top:3px;}
+.aav-statusrow{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.aav-chip{display:flex; align-items:center; gap:7px; padding:8px 13px; border-radius:9px; border:1px solid var(--aav-panel-border); font-size:12px; font-weight:500; background:var(--aav-panel);}
+.aav-chip.live{background:var(--aav-green-soft); color:var(--aav-green); border-color:var(--aav-green-soft);}
+.aav-dot{width:6px; height:6px; border-radius:50%; background:currentColor;}
+
+/* kpis */
+.aav-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;}
+.aav-kpi{border-radius:14px; padding:16px 17px; background:var(--aav-panel); border:1px solid var(--aav-panel-border); box-shadow:var(--aav-shadow); position:relative;}
+.aav-kpi-tag{position:absolute; top:14px; right:14px; font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:6px;}
+.aav-kpi-label{font-size:10.5px; font-weight:500; color:var(--aav-ink-2); text-transform:uppercase; letter-spacing:0.03em;}
+.aav-kpi-value{font-family:Charter,Georgia,serif; font-weight:600; font-size:24px; margin-top:8px; color:var(--aav-ink-0);}
+
+/* live strip */
+.aav-livestrip{display:flex; align-items:center; gap:12px; padding:13px 18px; border-radius:13px; margin-bottom:16px; background:var(--aav-blue-soft); border:1px solid var(--aav-blue-soft-2); flex-wrap:wrap;}
+.aav-livestrip .t1{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--aav-blue);}
+.aav-livestrip .t2{font-size:12px; color:var(--aav-ink-1); margin-top:2px;}
+.aav-pulsedot{position:relative; display:inline-flex; width:8px; height:8px; flex:none;}
+.aav-pulsedot .ping{position:absolute; inset:0; border-radius:50%; background:var(--aav-blue); opacity:0.6; animation:aav-ping 1.6s cubic-bezier(0,0,0.2,1) infinite;}
+.aav-pulsedot .core{position:relative; width:8px; height:8px; border-radius:50%; background:var(--aav-blue);}
+@keyframes aav-ping{75%,100%{transform:scale(2.4); opacity:0;}}
+
+/* run orchestrator card */
+.aav-panel{background:var(--aav-panel); border:1px solid var(--aav-panel-border); border-radius:14px; box-shadow:var(--aav-shadow); margin-bottom:16px; overflow:hidden;}
+.aav-panel-head{padding:15px 18px 12px; border-bottom:1px solid var(--aav-hair); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;}
+.aav-panel-h{font-family:Charter,Georgia,serif; font-weight:600; font-size:13.5px; color:var(--aav-ink-0); margin:0;}
+.aav-panel-sub{font-size:10.5px; color:var(--aav-ink-2); margin:0;}
+.aav-runcard-body{padding:16px 18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+.aav-inputbox{display:flex; align-items:center; gap:8px; flex:1; min-width:220px; background:var(--aav-bg-0); border:1px solid var(--aav-panel-border); border-radius:9px; padding:9px 12px;}
+.aav-inputbox svg{width:14px; height:14px; color:var(--aav-ink-2); flex:none;}
+.aav-inputbox input{background:transparent; border:none; outline:none; color:var(--aav-ink-0); font-family:inherit; font-size:12.5px; flex:1;}
+.aav-inputbox input::placeholder{color:var(--aav-ink-2);}
+.aav-btn{display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border-radius:9px; font-size:12.5px; font-weight:600; cursor:pointer; border:1px solid transparent; text-decoration:none; font-family:inherit;}
+.aav-btn:disabled{opacity:0.5; cursor:not-allowed;}
+.aav-btn-primary{background:var(--aav-blue); color:#fff;}
+.aav-btn-outline{background:var(--aav-panel); color:var(--aav-ink-0); border-color:var(--aav-panel-border);}
+.aav-btn-outline:hover{border-color:var(--aav-blue);}
+.aav-runlink{font-size:12px; color:var(--aav-blue); text-decoration:none; font-weight:600;}
+.aav-runlink:hover{text-decoration:underline;}
+.aav-errtext{font-size:12px; color:var(--aav-red); padding:0 18px 14px;}
+
+/* recent runs list */
+.aav-listhead{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:15px 18px; border-bottom:1px solid var(--aav-hair);}
+.aav-countbadge{font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; border:1px solid var(--aav-panel-border); color:var(--aav-ink-2);}
+.aav-fchips{display:flex; gap:7px; flex-wrap:wrap;}
+.aav-fchip{font-size:11.5px; font-weight:500; padding:6px 12px; border-radius:20px; border:1px solid var(--aav-panel-border); color:var(--aav-ink-2); background:transparent; cursor:pointer; font-family:inherit;}
+.aav-fchip.active{background:var(--aav-blue-soft); color:var(--aav-blue); border-color:var(--aav-blue-soft-2);}
+.aav-fchip strong{font-weight:700; margin-left:2px;}
+.aav-sorttoggle{display:flex; border:1px solid var(--aav-panel-border); border-radius:8px; overflow:hidden;}
+.aav-sorttoggle button{font-family:inherit; font-size:11.5px; font-weight:500; padding:6px 13px; border:none; background:var(--aav-panel); color:var(--aav-ink-2); cursor:pointer;}
+.aav-sorttoggle button.active{background:var(--aav-blue); color:#fff;}
+
+.aav-tablehead{display:flex; align-items:center; gap:12px; padding:8px 18px; border-bottom:1px solid var(--aav-hair); background:var(--aav-bg-0);}
+.aav-tablehead span{font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--aav-ink-2);}
+
+.aav-runrow{display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--aav-hair); cursor:pointer;}
+.aav-runrow:last-child{border-bottom:none;}
+.aav-runrow:hover{background:var(--aav-blue-soft);}
+.aav-tierdot{width:8px; height:8px; border-radius:50%; flex:none;}
+.aav-runrow .rid{flex:0 0 150px; min-width:0;}
+.aav-runrow .rid .w{font-family:ui-monospace,monospace; font-size:13px; font-weight:600; color:var(--aav-ink-0);}
+.aav-runrow .rid .s{font-size:11px; color:var(--aav-ink-2); margin-top:2px;}
+.aav-runrow .agents{flex:1; display:flex; gap:5px; flex-wrap:wrap; min-width:0;}
+.aav-agentchip{font-size:9.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap;}
+.aav-runrow .score{width:80px; flex:none;}
+.aav-runrow .score .v{font-family:ui-monospace,monospace; font-size:13px; font-weight:700;}
+.aav-runrow .score .t{font-size:10px; color:var(--aav-ink-2);}
+.aav-statusbadge{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:4px 10px; border-radius:7px; white-space:nowrap;}
+.aav-runrow .time{width:56px; text-align:right; font-size:11px; color:var(--aav-ink-2); font-family:ui-monospace,monospace; flex:none;}
+.aav-chev{width:14px; height:14px; color:var(--aav-ink-2); flex:none;}
+
+.aav-listfoot{display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-top:1px solid var(--aav-hair); flex-wrap:wrap; gap:10px;}
+.aav-search{display:flex; align-items:center; gap:7px; background:var(--aav-bg-0); border:1px solid var(--aav-panel-border); border-radius:8px; padding:7px 11px; width:260px;}
+.aav-search svg{width:13px; height:13px; color:var(--aav-ink-2); flex:none;}
+.aav-search input{background:transparent; border:none; outline:none; color:var(--aav-ink-0); font-family:inherit; font-size:12px; width:100%;}
+.aav-search input::placeholder{color:var(--aav-ink-2);}
+
+.aav-empty{padding:32px 18px; text-align:center; font-size:13px; color:var(--aav-ink-2);}
+.aav-loading{display:flex; align-items:center; gap:10px; padding:24px 18px; color:var(--aav-ink-2); font-size:13px;}
+.aav-spinner{width:15px; height:15px; border-radius:50%; border:2px solid var(--aav-blue-soft-2); border-top-color:var(--aav-blue); animation:aav-spin 0.7s linear infinite;}
+@keyframes aav-spin{to{transform:rotate(360deg);}}
+
+/* agent roster accordion */
+.aav-roster-head{display:flex; align-items:center; justify-content:space-between; padding:14px 18px; cursor:pointer;}
+.aav-roster-chips{display:flex; gap:6px; align-items:center;}
+.aav-roster-body{display:none; grid-template-columns:1fr 1fr; gap:8px 18px; padding:0 18px 16px; border-top:1px solid var(--aav-hair); padding-top:14px;}
+.aav-roster-body.open{display:grid;}
+.aav-roster-item{display:flex; align-items:flex-start; gap:8px; font-size:11.5px; color:var(--aav-ink-1);}

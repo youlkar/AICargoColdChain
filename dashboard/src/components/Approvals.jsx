@@ -1,12 +1,12 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useApi, postApi, deleteApi } from '../hooks/useApi';
 import { useWebSocket } from '../hooks/useWebSocket';
-import TierBadge from './TierBadge';
-import { NotificationResult } from '../lib/toolResults';
+import { NotificationResult, safeStr } from '../lib/toolResults';
 import {
-  CheckCircle, XCircle, Shield, ArrowRight, Play, Zap, RefreshCw,
-  Wifi, WifiOff, Clock, Ban, Eye, AlertTriangle, ThumbsUp,
+  CheckCircle, XCircle, Shield, RefreshCw, Search,
+  Clock, Ban, ThumbsUp, Zap, Play, AlertTriangle, Bell, Check,
 } from 'lucide-react';
+import './approvals-v2.css';
 
 const ALL_TOOLS = [
   { id: 'compliance_agent', label: 'Compliance' },
@@ -18,13 +18,97 @@ const ALL_TOOLS = [
   { id: 'triage_agent', label: 'Triage' },
 ];
 
-const STATUS_STYLES = {
-  pending:   { bg: 'bg-amber-500/10',   text: 'text-amber-400',   border: 'border-amber-500/20',   icon: Clock,       label: 'PENDING REVIEW' },
-  approved:  { bg: 'bg-emerald-500/10',  text: 'text-emerald-400', border: 'border-emerald-500/20', icon: CheckCircle,  label: 'APPROVED' },
-  confirmed: { bg: 'bg-cyan-500/10',     text: 'text-cyan-400',    border: 'border-cyan-500/20',    icon: ThumbsUp,     label: 'CONFIRMED' },
-  executed:  { bg: 'bg-violet-500/10',   text: 'text-violet-400',  border: 'border-violet-500/20',  icon: Zap,          label: 'EXECUTED' },
-  rejected:  { bg: 'bg-red-500/10',      text: 'text-red-400',     border: 'border-red-500/20',     icon: Ban,          label: 'REJECTED' },
+const TIER_STYLE = {
+  CRITICAL: { bg: 'var(--appr-red-soft)', color: 'var(--appr-red)' },
+  HIGH:     { bg: 'var(--appr-amber-soft)', color: 'var(--appr-amber)' },
+  MEDIUM:   { bg: 'var(--appr-yellow-soft)', color: 'var(--appr-yellow)' },
+  LOW:      { bg: 'var(--appr-green-soft)', color: 'var(--appr-green)' },
 };
+
+const STATUS_STYLES = {
+  pending:   { bg: 'var(--appr-amber-soft)', color: 'var(--appr-amber)', icon: Clock,       label: 'PENDING REVIEW' },
+  approved:  { bg: 'var(--appr-green-soft)', color: 'var(--appr-green)', icon: CheckCircle,  label: 'APPROVED' },
+  confirmed: { bg: 'var(--appr-blue-soft)',  color: 'var(--appr-blue)',  icon: ThumbsUp,     label: 'CONFIRMED' },
+  executed:  { bg: 'var(--appr-blue-soft)',  color: 'var(--appr-blue)',  icon: Zap,          label: 'EXECUTED' },
+  rejected:  { bg: 'var(--appr-red-soft)',   color: 'var(--appr-red)',   icon: Ban,          label: 'REJECTED' },
+};
+
+function TierPill({ tier }) {
+  const s = TIER_STYLE[tier] || TIER_STYLE.LOW;
+  return <span className="appr-tier" style={{ background: s.bg, color: s.color }}>{tier}</span>;
+}
+
+// ── Collapsed row for confirmed/executed/rejected approvals — expand for detail ──
+function DecidedCard({ a }) {
+  const [open, setOpen] = useState(false);
+  const status = a.status;
+  const style = STATUS_STYLES[status] || STATUS_STYLES.pending;
+  const StatusIcon = style.icon;
+
+  const summary = status === 'confirmed'
+    ? `First-pass execution verified as adequate by ${a.decided_by || 'operator'}`
+    : status === 'executed'
+    ? 'Corrective execution complete'
+    : `Rejected by ${a.decided_by || 'operator'} — no further execution`;
+
+  return (
+    <div className={`appr-card${status === 'rejected' ? ' rejected' : ''}`}>
+      <div className="appr-collapsed" onClick={() => setOpen(o => !o)}>
+        <TierPill tier={a.risk_tier} />
+        <span className="appr-id">{a.approval_id}</span>
+        <div className="grow">
+          {a.window_id || a.shipment_id}{a.container_id ? ` / ${a.container_id}` : ''} — {summary}
+        </div>
+        <span className="appr-status" style={{ background: style.bg, color: style.color }}>
+          <StatusIcon style={{ width: 11, height: 11 }} /> {style.label}
+        </span>
+        <span className="appr-time">{a.decided_at ? new Date(a.decided_at).toLocaleString() : (a.created_at ? new Date(a.created_at).toLocaleString() : '')}</span>
+        <svg className="appr-chev" style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
+      </div>
+      <div className={`appr-expand${open ? ' open' : ''}`}>
+        <p style={{ fontSize: 13, color: 'var(--appr-ink-0)', marginTop: 0 }}>{a.action_description}</p>
+        {a.justification && <p style={{ fontSize: 11.5, color: 'var(--appr-ink-2)', marginTop: 4 }}>{a.justification}</p>}
+
+        {status === 'confirmed' && (
+          <div className="appr-infobox" style={{ background: 'var(--appr-blue-soft)', color: 'var(--appr-blue)' }}>
+            <ThumbsUp style={{ width: 14, height: 14 }} />
+            Human confirmed — no additional tools needed.
+            {a.decided_at && <span style={{ marginLeft: 'auto', opacity: 0.8 }}>{new Date(a.decided_at).toLocaleString()}</span>}
+          </div>
+        )}
+
+        {status === 'executed' && (
+          <div className="appr-infobox" style={{ background: 'var(--appr-blue-soft)', color: 'var(--appr-blue)', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <Zap style={{ width: 14, height: 14 }} />
+              Corrective Execution Complete
+              {a.executed_at && <span style={{ marginLeft: 'auto', opacity: 0.8 }}>{new Date(a.executed_at).toLocaleString()}</span>}
+            </div>
+            {Array.isArray(a.executed_tools) && a.executed_tools.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {a.executed_tools.map(t => (
+                  <span key={t} className="appr-tag" style={{ background: 'var(--appr-blue-soft)', color: 'var(--appr-blue)', borderColor: 'var(--appr-blue-soft-2)' }}>{t}</span>
+                ))}
+              </div>
+            )}
+            {(a.post_approval_actions || []).map((pa, idx) => (
+              <div key={idx} className="appr-execline" style={{ width: '100%' }}>
+                <span className="dot" style={{ background: pa.success ? 'var(--appr-green)' : 'var(--appr-red)' }} />
+                <span style={{ fontWeight: 600, color: 'var(--appr-ink-0)' }}>{pa.tool?.replace(/_/g, ' ')}</span>
+                {!pa.success && <span style={{ color: 'var(--appr-red)', marginLeft: 'auto' }}>failed</span>}
+              </div>
+            ))}
+            {(a.post_approval_actions || []).map((pa, idx) => (
+              pa.tool === 'notification_agent'
+                ? <div key={`nr-${idx}`} style={{ marginTop: 6, width: '100%' }}><NotificationResult r={pa.result} /></div>
+                : (pa.result?.error ? <p key={`err-${idx}`} style={{ fontSize: 11, color: 'var(--appr-red)', marginTop: 4 }}>{pa.result.error}</p> : null)
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Approvals() {
   const { data, loading, error, refetch } = useApi('/approvals/all');
@@ -34,6 +118,10 @@ export default function Approvals() {
   const [executionResults, setExecutionResults] = useState({});
   const [executing, setExecuting] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [channels, setChannels] = useState({ slack: true, sms: true, email: false });
 
   useEffect(() => {
     if (wsMessages.length > 0) refetch();
@@ -100,9 +188,40 @@ export default function Approvals() {
     });
   }, []);
 
-  const filtered = Array.isArray(data)
-    ? (filter === 'all' ? data : data.filter(a => a.status === filter))
-    : [];
+  const toggleSelected = useCallback((approvalId) => {
+    setSelectedIds(prev => prev.includes(approvalId)
+      ? prev.filter(id => id !== approvalId)
+      : [...prev, approvalId]);
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds([]), []);
+
+  const handleBulkApprove = useCallback(async () => {
+    setBulkBusy(true);
+    try {
+      for (const id of selectedIds) {
+        const a = (Array.isArray(data) ? data : []).find(x => x.approval_id === id);
+        if (!a) continue;
+        const allProposed = [...(a.proposed_corrections || []), ...(a.proposed_deferred || [])];
+        await handleExecute(id, allProposed);
+      }
+    } finally {
+      setBulkBusy(false);
+      setSelectedIds([]);
+    }
+  }, [selectedIds, data, handleExecute]);
+
+  const handleBulkReject = useCallback(async () => {
+    setBulkBusy(true);
+    try {
+      for (const id of selectedIds) {
+        await handleReject(id);
+      }
+    } finally {
+      setBulkBusy(false);
+      setSelectedIds([]);
+    }
+  }, [selectedIds, handleReject]);
 
   const counts = Array.isArray(data) ? {
     all: data.length,
@@ -112,70 +231,185 @@ export default function Approvals() {
     rejected: data.filter(a => a.status === 'rejected').length,
   } : { all: 0, pending: 0, confirmed: 0, executed: 0, rejected: 0 };
 
+  const correctionsCount = Array.isArray(data)
+    ? data.filter(a => a.review_status === 'corrections_proposed' && a.status === 'pending').length
+    : 0;
+
+  // Real top-priority pending item, used to drive the notification preview —
+  // no fabricated alert content, this is whatever's actually waiting.
+  const safeData = Array.isArray(data) ? data : [];
+  const pendingItems = safeData.filter(a => a.status === 'pending');
+  const topCriticalPending = pendingItems.find(a => a.risk_tier === 'CRITICAL') || pendingItems[0] || null;
+
+  const filtered = useMemo(() => {
+    let rows = Array.isArray(data) ? data : [];
+    if (filter !== 'all') rows = rows.filter(a => a.status === filter);
+    const q = search.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter(a => [a.approval_id, a.window_id, a.shipment_id, a.container_id]
+        .filter(Boolean).join(' ').toLowerCase().includes(q));
+    }
+    return rows;
+  }, [data, filter, search]);
+
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="appr">
+
+      {/* Header */}
+      <div className="appr-top">
         <div>
-          <h1 className="text-2xl font-bold text-white">Human Review Queue</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Every MEDIUM+ event lands here for human review after automated execution</p>
+          <h1 className="appr-title">Human Review Queue</h1>
+          <p className="appr-sub">Every MEDIUM+ event lands here for human review after automated execution</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="glass-card-sm px-2.5 py-1.5 flex items-center gap-1.5">
-            {connected ? <Wifi className="w-3 h-3 text-emerald-400" /> : <WifiOff className="w-3 h-3 text-red-400" />}
-            <span className={`text-[10px] font-medium ${connected ? 'text-emerald-400' : 'text-red-400'}`}>
-              {connected ? 'Live' : 'Offline'}
-            </span>
+        <div className="appr-statusrow">
+          <div className={`appr-chip ${connected ? 'live' : ''}`}>
+            <span className="appr-livedot" />{connected ? 'Live' : 'Offline'}
           </div>
-          <button onClick={refetch} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition glass-card-sm px-2.5 py-1.5">
-            <RefreshCw className="w-3 h-3" /> Refresh
+          <button type="button" className="appr-chip clickable" onClick={refetch}>
+            <RefreshCw style={{ width: 12, height: 12 }} /> Refresh
           </button>
           {Array.isArray(data) && data.length > 0 && (
-            <button onClick={handleClearAll} className="flex items-center gap-1.5 text-xs text-red-400/70 hover:text-red-400 transition glass-card-sm px-2.5 py-1.5 border border-red-500/10 hover:border-red-500/20">
-              <XCircle className="w-3 h-3" /> Clear All
+            <button type="button" className="appr-chip clickable danger" onClick={handleClearAll}>
+              <XCircle style={{ width: 12, height: 12 }} /> Clear All
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex gap-2">
-        {['all', 'pending', 'confirmed', 'executed', 'rejected'].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-              filter === f
-                ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
-                : 'bg-white/[0.03] text-slate-500 border-white/[0.06] hover:border-white/[0.12]'
-            }`}>
-            {f.charAt(0).toUpperCase() + f.slice(1)} ({counts[f]})
-          </button>
-        ))}
+      {/* KPI summary — computed from live approvals data */}
+      <div className="appr-kpis">
+        <div className="appr-kpi">
+          <div className="appr-kpi-tag" style={{ background: 'var(--appr-amber-soft)', color: 'var(--appr-amber)' }}>ACTION</div>
+          <div className="appr-kpi-label">Pending Review</div>
+          <div className="appr-kpi-value" style={{ color: 'var(--appr-amber)' }}>{counts.pending}</div>
+        </div>
+        <div className="appr-kpi">
+          <div className="appr-kpi-tag" style={{ background: 'var(--appr-red-soft)', color: 'var(--appr-red)' }}>!</div>
+          <div className="appr-kpi-label">Corrections Proposed</div>
+          <div className="appr-kpi-value" style={{ color: 'var(--appr-red)' }}>{correctionsCount}</div>
+        </div>
+        <div className="appr-kpi">
+          <div className="appr-kpi-tag" style={{ background: 'var(--appr-blue-soft)', color: 'var(--appr-blue)' }}>DONE</div>
+          <div className="appr-kpi-label">Executed</div>
+          <div className="appr-kpi-value" style={{ color: 'var(--appr-blue)' }}>{counts.executed}</div>
+        </div>
+        <div className="appr-kpi">
+          <div className="appr-kpi-label">Rejected</div>
+          <div className="appr-kpi-value">{counts.rejected}</div>
+        </div>
+      </div>
+
+      {/* Live Alert Preview — shows the real top-priority pending item as it
+          would appear in a push notification, with one-tap approve/reject */}
+      <div className="appr-notifpreview">
+        <div className="appr-notif-head">
+          <div>
+            <h2>Live Alert Preview</h2>
+            <p>What the on-call approver would see the moment this item hit the queue</p>
+          </div>
+          <div className="appr-channeltoggles">
+            {(['slack', 'sms', 'email']).map(ch => (
+              <button key={ch} type="button"
+                className={`appr-channeltoggle${channels[ch] ? ' on' : ''}`}
+                onClick={() => setChannels(prev => ({ ...prev, [ch]: !prev[ch] }))}>
+                <span className="swdot" />{ch.charAt(0).toUpperCase() + ch.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {topCriticalPending ? (
+          <div className="appr-slackmock">
+            <div className="appr-slackmock-top">
+              <div className="appr-slackmock-avatar"><Bell style={{ width: 15, height: 15 }} /></div>
+              <div className="appr-slackmock-meta">
+                <div className="who">Cold Chain AI <span style={{ fontWeight: 400, color: 'var(--appr-ink-2)' }}>via #ops-approvals</span></div>
+                <div className="chan">to on-call approver</div>
+              </div>
+              <div className="appr-slackmock-time">{topCriticalPending.created_at ? new Date(topCriticalPending.created_at).toLocaleTimeString() : 'just now'}</div>
+            </div>
+            <div className="appr-slackmock-body">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle style={{ width: 13, height: 13, color: 'var(--appr-red)', flex: 'none' }} />
+                <b>{topCriticalPending.risk_tier} approval needed — {topCriticalPending.approval_id}</b>
+              </span><br />
+              {topCriticalPending.window_id || topCriticalPending.shipment_id}{topCriticalPending.container_id ? ` / ${topCriticalPending.container_id}` : ''} · {safeStr(topCriticalPending.action_description)}
+            </div>
+            <div className="appr-slackmock-actions">
+              <button type="button" className="appr-slackmock-btn approve"
+                disabled={executing === topCriticalPending.approval_id}
+                onClick={() => handleExecute(topCriticalPending.approval_id, [...(topCriticalPending.proposed_corrections || []), ...(topCriticalPending.proposed_deferred || [])])}>
+                <Check style={{ width: 12, height: 12 }} /> Approve &amp; Execute
+              </button>
+              <button type="button" className="appr-slackmock-btn reject"
+                disabled={actionInFlight === topCriticalPending.approval_id}
+                onClick={() => handleReject(topCriticalPending.approval_id)}>
+                <XCircle style={{ width: 12, height: 12 }} /> Reject
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '20px 18px', fontSize: 12.5, color: 'var(--appr-ink-2)' }}>No pending approvals right now — nothing to alert on.</div>
+        )}
+      </div>
+
+      {/* Bulk selection bar — appears once one or more pending cards are checked */}
+      {selectedIds.length > 0 && (
+        <div className="appr-bulkbar">
+          <span className="count">{selectedIds.length} selected</span>
+          <span style={{ fontSize: 11.5, color: 'var(--appr-ink-2)' }}>of {counts.pending} pending</span>
+          <div className="appr-bulkbar-actions">
+            <button type="button" className="appr-btn appr-btn-primary" disabled={bulkBusy} onClick={handleBulkApprove}>
+              {bulkBusy ? <><span className="appr-spinner" style={{ borderTopColor: '#fff', borderColor: 'rgba(255,255,255,0.4)' }} /> Working…</> : 'Approve All Selected'}
+            </button>
+            <button type="button" className="appr-btn appr-btn-reject" disabled={bulkBusy} onClick={handleBulkReject}>Reject All Selected</button>
+            <a href="#" onClick={e => { e.preventDefault(); clearSelection(); }} style={{ fontSize: 12, color: 'var(--appr-ink-2)', textDecoration: 'none', alignSelf: 'center' }}>Cancel</a>
+          </div>
+        </div>
+      )}
+
+      {/* Filter + search */}
+      <div className="appr-bar">
+        <div className="appr-tabs">
+          {['all', 'pending', 'confirmed', 'executed', 'rejected'].map(f => (
+            <button key={f} type="button" className={`appr-tab${filter === f ? ' active' : ''}`} onClick={() => setFilter(f)}>
+              {f.charAt(0).toUpperCase() + f.slice(1)} <strong>{counts[f]}</strong>
+            </button>
+          ))}
+        </div>
+        <div className="appr-search">
+          <Search />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search shipment or approval ID" />
+        </div>
       </div>
 
       {loading && (
-        <div className="flex items-center gap-3 text-slate-500 py-8">
-          <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-          Loading review queue...
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--appr-ink-2)', padding: '24px 0' }}>
+          <div className="appr-spinner" /> Loading review queue…
         </div>
       )}
-      {error && <p className="text-red-400">Error: {error}</p>}
+      {error && <p style={{ color: 'var(--appr-red)' }}>Error: {error}</p>}
 
       {!loading && filtered.length === 0 && (
-        <div className="glass-card p-10 text-center">
-          <Shield className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">
-            {filter === 'all' ? 'No reviews yet. Run orchestration on a MEDIUM+ window to generate one.'
-              : `No ${filter} reviews.`}
+        <div className="appr-empty">
+          <Shield style={{ display: 'block', margin: '0 auto' }} />
+          <p className="t">{filter === 'all' && !search ? 'No reviews yet' : 'No matching reviews'}</p>
+          <p className="d">
+            {filter === 'all' && !search
+              ? 'Run orchestration on a MEDIUM+ window to generate one.'
+              : 'Try a different filter or search term.'}
           </p>
         </div>
       )}
 
-      {filtered.map((a, i) => {
+      {filtered.map(a => {
         const status = a.status || 'pending';
+        if (status !== 'pending' && status !== 'approved') {
+          return <DecidedCard key={a.approval_id} a={a} />;
+        }
+
         const style = STATUS_STYLES[status] || STATUS_STYLES.pending;
         const StatusIcon = style.icon;
         const isPending = status === 'pending';
-        const isConfirmed = status === 'confirmed';
-        const isExecuted = status === 'executed';
-        const isRejected = status === 'rejected';
         const isApproved = status === 'approved';
         const execResult = executionResults[a.approval_id];
         const toolsForThis = selectedTools[a.approval_id] || [];
@@ -186,97 +420,102 @@ export default function Approvals() {
         const allProposed = [...proposedCorrections, ...proposedDeferred];
 
         return (
-          <div key={a.approval_id} className={`glass-card p-5 space-y-3 animate-slide-up ${isRejected ? 'opacity-60' : ''}`}
-            style={{ animationDelay: `${i * 80}ms` }}>
-
-            {/* Header */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <TierBadge tier={a.risk_tier} size="lg" />
+          <div key={a.approval_id} className="appr-card">
+            <div className="appr-card-head">
+              {isPending && (
+                <input type="checkbox" className="appr-select" checked={selectedIds.includes(a.approval_id)}
+                  onChange={() => toggleSelected(a.approval_id)} />
+              )}
+              <TierPill tier={a.risk_tier} />
               {(a.guardrail_findings || []).some(f => !f.passed && f.check === 'rate_limit_exceeded') && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-heading border bg-red-500/15 text-red-300 border-red-500/30">
-                  Rate Limit
-                </span>
+                <span className="appr-tag" style={{ background: 'var(--appr-red-soft)', color: 'var(--appr-red)', borderColor: 'var(--appr-red-soft-2)' }}>Rate Limit</span>
               )}
               {(a.guardrail_findings || []).some(f => !f.passed && f.check === 'low_confidence') && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-heading border bg-amber-500/15 text-amber-300 border-amber-500/30">
-                  Confidence Gate
-                </span>
+                <span className="appr-tag" style={{ background: 'var(--appr-amber-soft)', color: 'var(--appr-amber)', borderColor: 'var(--appr-amber-soft)' }}>Confidence Gate</span>
               )}
-              <span className="font-semibold text-white">{a.approval_id}</span>
-              <span className="text-xs text-slate-500">
-                {a.window_id || a.shipment_id}{a.container_id ? ` / ${a.container_id}` : ''}
+              <span className="appr-id">{a.approval_id}</span>
+              <span className="appr-idsub">{a.window_id || a.shipment_id}{a.container_id ? ` / ${a.container_id}` : ''}</span>
+              <span className="appr-status" style={{ background: style.bg, color: style.color }}>
+                <StatusIcon style={{ width: 11, height: 11 }} /> {style.label}
               </span>
-              <span className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${style.bg} ${style.text} ${style.border}`}>
-                <StatusIcon className="w-3 h-3" /> {style.label}
-              </span>
-              {a.decided_by && (
-                <span className="text-[10px] text-slate-600">
-                  by {a.decided_by} {a.decided_at ? `at ${new Date(a.decided_at).toLocaleTimeString()}` : ''}
-                </span>
-              )}
-              <span className="ml-auto text-[11px] text-slate-600">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
+              <span className="appr-time">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
             </div>
 
-            <p className="text-sm text-slate-300 leading-relaxed">{a.action_description}</p>
-            {a.justification && <p className="text-xs text-slate-500">{a.justification}</p>}
+            <div className="appr-body">
 
-            {/* Deferred notification */}
-            {proposedDeferred.length > 0 && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                <span className="text-[10px] text-blue-400 uppercase tracking-wider font-medium">Awaiting approval:</span>
-                {proposedDeferred.map((act, j) => (
-                  <span key={j} className="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded text-[11px] border border-blue-500/15">{act.replace('_agent', '').replace('_', ' ')}</span>
-                ))}
+              {/* 1. What happened */}
+              <div className="appr-section">
+                <div className="appr-section-lbl"><span className="num">1</span>What happened</div>
+                <div className="appr-reasoncard">
+                  <p className="desc">{a.action_description}</p>
+                  {a.justification && <p className="why">{a.justification}</p>}
+                </div>
               </div>
-            )}
-            {/* Proposed corrections */}
-            {proposedCorrections.length > 0 && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                <span className="text-[10px] text-amber-400 uppercase tracking-wider font-medium">Corrections:</span>
-                {proposedCorrections.map((act, j) => (
-                  <span key={j} className="bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded text-[11px] border border-amber-500/15">{act.replace('_agent', '').replace('_', ' ')}</span>
-                ))}
-              </div>
-            )}
-            {Array.isArray(a.first_pass_tools) && a.first_pass_tools.length > 0 && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                <span className="text-[10px] text-emerald-400 uppercase tracking-wider font-medium">First-pass executed:</span>
-                {a.first_pass_tools.map((act, j) => (
-                  <span key={j} className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded text-[11px] border border-emerald-500/15">{act}</span>
-                ))}
-              </div>
-            )}
 
-            {/* ── PENDING REVIEW: The main interactive state ── */}
-            {isPending && (
-              <div className="pt-3 border-t border-white/[0.06] space-y-4">
-
-                {hasCorrections ? (
-                  <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center gap-2 text-[11px]">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                      <span className="text-amber-400 font-medium">
-                        Reflection found quality issues — corrections proposed below. Notification also pending your approval.
-                      </span>
-                    </div>
+              {/* 2. Agent activity so far */}
+              {isPending && (Array.isArray(a.first_pass_tools) && a.first_pass_tools.length > 0 || allProposed.length > 0) && (
+                <div className="appr-section">
+                  <div className="appr-section-lbl"><span className="num">2</span>Agent activity so far</div>
+                  <div className="appr-toolstable">
+                    {Array.isArray(a.first_pass_tools) && a.first_pass_tools.length > 0 && (
+                      <div className="appr-toolsrow">
+                        <span className="swatch" style={{ background: 'var(--appr-green)' }} />
+                        <span className="rlbl" style={{ color: 'var(--appr-green)' }}>Already ran</span>
+                        <div className="rchips">
+                          {a.first_pass_tools.map(t => (
+                            <span key={t} className="appr-tag" style={{ background: 'var(--appr-green-soft)', color: 'var(--appr-green)', borderColor: 'var(--appr-green-soft)' }}>{t.replace('_agent', '')}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {proposedCorrections.length > 0 && (
+                      <div className="appr-toolsrow">
+                        <span className="swatch" style={{ background: 'var(--appr-amber)' }} />
+                        <span className="rlbl" style={{ color: 'var(--appr-amber)' }}>Proposed correction</span>
+                        <div className="rchips">
+                          {proposedCorrections.map(t => (
+                            <span key={t} className="appr-tag" style={{ background: 'var(--appr-amber-soft)', color: 'var(--appr-amber)', borderColor: 'var(--appr-amber-soft)' }}>{t.replace('_agent', '')}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {proposedDeferred.length > 0 && (
+                      <div className="appr-toolsrow">
+                        <span className="swatch" style={{ background: 'var(--appr-blue)' }} />
+                        <span className="rlbl" style={{ color: 'var(--appr-blue)' }}>Deferred</span>
+                        <div className="rchips">
+                          {proposedDeferred.map(t => (
+                            <span key={t} className="appr-tag" style={{ background: 'var(--appr-blue-soft)', color: 'var(--appr-blue)', borderColor: 'var(--appr-blue-soft-2)' }}>{t.replace('_agent', '')}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center gap-2 text-[11px]">
-                      <Eye className="w-3.5 h-3.5 text-blue-400" />
-                      <span className="text-blue-400 font-medium">
-                        All tools executed successfully. Approve to send stakeholder notification.
-                      </span>
-                    </div>
-                  </div>
-                )}
 
-                {/* Tool selection */}
-                <div>
-                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                    {hasCorrections ? 'Corrections pre-selected — deselect to skip, or add more' : 'Optionally select additional tools to run'}
+                  {isPending && (
+                    hasCorrections ? (
+                      <div className="appr-hint" style={{ background: 'var(--appr-amber-soft)', color: 'var(--appr-amber)' }}>
+                        <AlertTriangle style={{ width: 14, height: 14 }} />
+                        Reflection found quality issues after the first pass — corrections are pre-selected below. A stakeholder notification is also waiting on your decision.
+                      </div>
+                    ) : (
+                      <div className="appr-hint" style={{ background: 'var(--appr-blue-soft)', color: 'var(--appr-blue)' }}>
+                        <CheckCircle style={{ width: 14, height: 14 }} />
+                        All tools executed successfully — no corrections needed. Approve to send the stakeholder notification.
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* 3. Your decision */}
+              {isPending && (
+                <div className="appr-section">
+                  <div className="appr-section-lbl"><span className="num">3</span>Your decision</div>
+                  <p className="appr-toolslbl">
+                    {hasCorrections ? 'Corrections are pre-selected below — deselect to skip, or add more before executing' : 'Optionally select additional tools to run before approving'}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="appr-toolchips">
                     {ALL_TOOLS.map(tool => {
                       const isCorrection = proposedCorrections.includes(tool.id);
                       const isDeferred = proposedDeferred.includes(tool.id);
@@ -284,163 +523,97 @@ export default function Approvals() {
                         ? toolsForThis.includes(tool.id)
                         : (isCorrection || isDeferred);
                       const isFirstPass = Array.isArray(a.first_pass_tools) && a.first_pass_tools.includes(tool.id);
+                      const cls = isFirstPass ? 'done' : effectiveSelected && isDeferred ? 'deferred-selected' : effectiveSelected ? 'selected' : '';
                       return (
-                        <button key={tool.id} onClick={() => toggleTool(a.approval_id, tool.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                            effectiveSelected && isDeferred
-                              ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 shadow-sm shadow-blue-500/10'
-                              : effectiveSelected
-                                ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30 shadow-sm shadow-cyan-500/10'
-                                : isFirstPass
-                                  ? 'bg-emerald-500/8 text-emerald-400/50 border-emerald-500/10 cursor-not-allowed opacity-50'
-                                  : 'bg-white/[0.03] text-slate-500 border-white/[0.06] hover:border-white/[0.12]'
-                          }`}
+                        <button key={tool.id} type="button"
+                          className={`appr-toolchip${cls ? ' ' + cls : ''}`}
                           disabled={isFirstPass}
-                          title={isFirstPass ? 'Already executed in first pass' : isDeferred ? 'Deferred to post-approval' : ''}>
+                          title={isFirstPass ? 'Already executed in first pass' : isDeferred ? 'Deferred to post-approval' : ''}
+                          onClick={() => toggleTool(a.approval_id, tool.id)}>
                           {tool.label} {isFirstPass ? '✓' : isDeferred ? '⏳' : ''}
                         </button>
                       );
                     })}
                   </div>
-                </div>
 
-                {/* Action buttons */}
-                <div className="flex gap-3 flex-wrap">
-                  {toolsForThis.length > 0 ? (
-                    <button onClick={() => handleExecute(a.approval_id, allProposed)}
-                      disabled={executing === a.approval_id || actionInFlight === a.approval_id}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-sm font-semibold hover:from-violet-500 hover:to-purple-500 disabled:opacity-50 transition-all shadow-lg shadow-violet-500/15">
-                      {executing === a.approval_id ? (
-                        <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Executing...</>
-                      ) : (
-                        <><Play className="w-4 h-4" /> Execute {toolsForThis.length} selected tools</>
-                      )}
-                    </button>
-                  ) : (
-                    <button onClick={() => handleExecute(a.approval_id, allProposed)}
-                      disabled={executing === a.approval_id || actionInFlight === a.approval_id}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-sm font-semibold hover:from-violet-500 hover:to-purple-500 disabled:opacity-50 transition-all shadow-lg shadow-violet-500/15">
-                      {executing === a.approval_id ? (
-                        <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Executing...</>
-                      ) : (
-                        <><Play className="w-4 h-4" /> Approve &amp; Execute ({allProposed.length} tools{hasCorrections ? ` incl. ${proposedCorrections.length} corrections` : ''})</>
-                      )}
-                    </button>
-                  )}
-
-                  {hasCorrections && (
-                    <button onClick={() => handleExecute(a.approval_id, proposedDeferred)}
-                      disabled={executing === a.approval_id || actionInFlight === a.approval_id}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-xl text-sm font-semibold hover:from-emerald-500 hover:to-green-500 disabled:opacity-50 transition-all shadow-lg shadow-emerald-500/15">
-                      <ThumbsUp className="w-4 h-4" />
-                      Skip Corrections — Send Notification Only
-                    </button>
-                  )}
-
-                  <button onClick={() => handleReject(a.approval_id)}
-                    disabled={actionInFlight === a.approval_id}
-                    className="flex items-center gap-1.5 px-4 py-2.5 text-red-400 border border-red-500/20 rounded-xl text-sm font-medium hover:bg-red-500/5 disabled:opacity-50 transition-all">
-                    <XCircle className="w-4 h-4" /> Reject
-                  </button>
-
-                  {actionInFlight === a.approval_id && (
-                    <div className="flex items-center gap-2 text-slate-500 text-xs">
-                      <div className="w-3.5 h-3.5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-                      Processing...
-                    </div>
-                  )}
-                </div>
-
-                {execResult?.error && (
-                  <div className="glass-card-sm p-3 border border-red-500/20 bg-red-500/5">
-                    <p className="text-xs text-red-400">Error: {typeof execResult.error === 'object' ? JSON.stringify(execResult.error) : execResult.error}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Approved but waiting for user to select tools */}
-            {isApproved && (
-              <div className="pt-3 border-t border-emerald-500/10 space-y-3">
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Select tools to execute</p>
-                <div className="flex flex-wrap gap-2">
-                  {ALL_TOOLS.map(tool => {
-                    const selected = toolsForThis.includes(tool.id);
-                    return (
-                      <button key={tool.id} onClick={() => toggleTool(a.approval_id, tool.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                          selected ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' : 'bg-white/[0.03] text-slate-500 border-white/[0.06] hover:border-white/[0.12]'
-                        }`}>
-                        {tool.label}
+                  <div className="appr-foot">
+                    {toolsForThis.length > 0 ? (
+                      <button type="button" className="appr-btn appr-btn-primary"
+                        disabled={executing === a.approval_id || actionInFlight === a.approval_id}
+                        onClick={() => handleExecute(a.approval_id, allProposed)}>
+                        {executing === a.approval_id ? <><span className="appr-spinner" style={{ borderTopColor: '#fff', borderColor: 'rgba(255,255,255,0.4)' }} /> Executing…</> : <><Play style={{ width: 13, height: 13 }} /> Execute {toolsForThis.length} selected tools</>}
                       </button>
-                    );
-                  })}
-                </div>
-                <button onClick={() => handleExecute(a.approval_id)}
-                  disabled={executing === a.approval_id}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-sm font-semibold hover:from-violet-500 hover:to-purple-500 disabled:opacity-50 transition-all shadow-lg shadow-violet-500/15">
-                  <Play className="w-4 h-4" />
-                  {executing === a.approval_id ? 'Executing...' : `Execute ${toolsForThis.length > 0 ? toolsForThis.length + ' selected' : 'proposed'} tools`}
-                </button>
-              </div>
-            )}
+                    ) : (
+                      <button type="button" className="appr-btn appr-btn-primary"
+                        disabled={executing === a.approval_id || actionInFlight === a.approval_id}
+                        onClick={() => handleExecute(a.approval_id, allProposed)}>
+                        {executing === a.approval_id ? <><span className="appr-spinner" style={{ borderTopColor: '#fff', borderColor: 'rgba(255,255,255,0.4)' }} /> Executing…</> : <><Play style={{ width: 13, height: 13 }} /> Approve &amp; Execute ({allProposed.length} tools{hasCorrections ? ` incl. ${proposedCorrections.length} corrections` : ''})</>}
+                      </button>
+                    )}
 
-            {/* Confirmed: human said first pass is fine */}
-            {isConfirmed && (
-              <div className="pt-3 border-t border-cyan-500/10">
-                <div className="glass-card-sm p-4 border border-cyan-500/10">
-                  <div className="flex items-center gap-2 mb-1">
-                    <ThumbsUp className="w-4 h-4 text-cyan-400" />
-                    <span className="text-xs font-bold text-cyan-400">Human Confirmed</span>
-                    {a.decided_at && <span className="text-[10px] text-slate-600 ml-auto">{new Date(a.decided_at).toLocaleString()}</span>}
-                  </div>
-                  <p className="text-[11px] text-slate-400">First-pass execution verified as adequate by {a.decided_by || 'operator'}. No additional tools needed.</p>
-                </div>
-              </div>
-            )}
+                    {hasCorrections && (
+                      <button type="button" className="appr-btn appr-btn-confirm"
+                        disabled={executing === a.approval_id || actionInFlight === a.approval_id}
+                        onClick={() => handleExecute(a.approval_id, proposedDeferred)}>
+                        <ThumbsUp style={{ width: 13, height: 13 }} /> Skip Corrections — Notify Only
+                      </button>
+                    )}
 
-            {/* Executed: corrective tools were run */}
-            {isExecuted && (
-              <div className="pt-3 border-t border-violet-500/10">
-                <div className="glass-card-sm p-4 border border-violet-500/10 space-y-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Zap className="w-4 h-4 text-violet-400" />
-                    <span className="text-xs font-bold text-violet-400">Corrective Execution Complete</span>
-                    {a.executed_at && <span className="text-[10px] text-slate-600 ml-auto">{new Date(a.executed_at).toLocaleString()}</span>}
+                    <button type="button" className="appr-btn appr-btn-reject"
+                      disabled={actionInFlight === a.approval_id}
+                      onClick={() => handleReject(a.approval_id)}>
+                      <XCircle style={{ width: 13, height: 13 }} /> Reject
+                    </button>
+
+                    {actionInFlight === a.approval_id && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--appr-ink-2)' }}>
+                        <span className="appr-spinner" /> Processing…
+                      </span>
+                    )}
                   </div>
-                  {Array.isArray(a.executed_tools) && a.executed_tools.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {a.executed_tools.map(t => (
-                        <span key={t} className="bg-violet-500/10 text-violet-400 text-[10px] px-2 py-0.5 rounded border border-violet-500/15">{t}</span>
-                      ))}
+
+                  {execResult?.error && (
+                    <div className="appr-errbox">
+                      Error: {typeof execResult.error === 'object' ? JSON.stringify(execResult.error) : execResult.error}
                     </div>
                   )}
-                  {(execResult?.post_approval_actions || a.post_approval_actions || []).map((pa, idx) => (
-                    <div key={idx} className="pt-2 border-t border-white/[0.04]">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${pa.success ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                        <span className="text-[11px] font-semibold text-slate-300">{pa.tool?.replace(/_/g, ' ')}</span>
-                        {!pa.success && <span className="text-[10px] text-red-400/80 ml-auto">failed</span>}
-                      </div>
-                      {pa.tool === 'notification_agent'
-                        ? <NotificationResult r={pa.result} />
-                        : (pa.result?.error
-                            ? <p className="text-[11px] text-red-400/70">{pa.result.error}</p>
-                            : null)}
-                    </div>
-                  ))}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Rejected */}
-            {isRejected && (
-              <div className="pt-3 border-t border-red-500/10">
-                <p className="text-xs text-red-400/70">
-                  Rejected by {a.decided_by || 'operator'} — no further execution.
-                </p>
-              </div>
-            )}
+              {/* Approved: waiting for tool selection */}
+              {isApproved && (
+                <div className="appr-section">
+                  <div className="appr-section-lbl"><span className="num">2</span>Select tools to execute</div>
+                  <div className="appr-toolchips">
+                    {ALL_TOOLS.map(tool => {
+                      const selected = toolsForThis.includes(tool.id);
+                      return (
+                        <button key={tool.id} type="button"
+                          className={`appr-toolchip${selected ? ' selected' : ''}`}
+                          onClick={() => toggleTool(a.approval_id, tool.id)}>
+                          {tool.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="appr-foot">
+                    <button type="button" className="appr-btn appr-btn-confirm"
+                      disabled={actionInFlight === a.approval_id || executing === a.approval_id}
+                      onClick={() => handleConfirm(a.approval_id)}>
+                      <ThumbsUp style={{ width: 13, height: 13 }} />
+                      {actionInFlight === a.approval_id ? 'Confirming…' : 'Confirm — First Pass Adequate'}
+                    </button>
+                    <button type="button" className="appr-btn appr-btn-primary"
+                      disabled={executing === a.approval_id}
+                      onClick={() => handleExecute(a.approval_id)}>
+                      <Play style={{ width: 13, height: 13 }} />
+                      {executing === a.approval_id ? 'Executing…' : `Execute ${toolsForThis.length > 0 ? toolsForThis.length + ' selected' : 'proposed'} tools`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
         );
       })}
