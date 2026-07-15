@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
@@ -34,6 +37,9 @@ _BASE = Path(__file__).resolve().parent.parent
 _PROFILES_PATH = _BASE / "data" / "product_profiles.json"
 
 _profiles_cache: Optional[dict] = None
+
+_WEATHER_CACHE_TTL_S = 600  # 10 minutes
+_weather_cache: Dict[tuple, tuple] = {}  # (lat, lon) -> (fetched_at, data)
 
 
 def _load_profiles() -> dict:
@@ -62,10 +68,47 @@ def _fetch_shipment_route(shipment_id: str) -> Optional[Dict[str, Any]]:
                 "ambient_temp_c": row.get("ambient_temp_c"),
                 "weather_condition": row.get("weather_condition"),
                 "flight_delay_prob": row.get("flight_delay_prob"),
+                "origin_lat": row.get("origin_lat"),
+                "origin_lon": row.get("origin_lon"),
             }
     except Exception as e:
         logger.debug("shipment route lookup failed for %s: %s", shipment_id, e)
     return None
+
+
+def _fetch_live_weather(lat: float, lon: float) -> Optional[Dict[str, Any]]:
+    """
+    Live current-weather lookup from OpenWeatherMap for (lat, lon).
+    Returns None on any failure (missing key, timeout, bad response) —
+    never raises. Caller falls back to the shipment's static weather field.
+    """
+    api_key = os.environ.get("OPENWEATHERMAP_API_KEY")
+    if not api_key:
+        return None
+
+    cache_key = (round(lat, 1), round(lon, 1))
+    cached = _weather_cache.get(cache_key)
+    if cached and (time.time() - cached[0]) < _WEATHER_CACHE_TTL_S:
+        return cached[1]
+
+    try:
+        resp = httpx.get(
+            "https://api.openweathermap.org/data/2.5/weather",
+            params={"lat": lat, "lon": lon, "appid": api_key, "units": "metric"},
+            timeout=4.0,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        data = {
+            "weather_condition": (payload.get("weather") or [{}])[0].get("main", "").lower(),
+            "ambient_temp_c": payload.get("main", {}).get("temp"),
+            "wind_speed_ms": payload.get("wind", {}).get("speed"),
+        }
+        _weather_cache[cache_key] = (time.time(), data)
+        return data
+    except Exception as exc:
+        logger.warning("Live weather fetch failed for (%s, %s): %s", lat, lon, exc)
+        return None
 
 
 def _get_temp_class(product_id: str) -> str:
@@ -286,6 +329,7 @@ def _execute(
     temp_class = _get_temp_class(product_id) if product_id else "refrigerated"
 
     shipment_route = _fetch_shipment_route(shipment_id)
+    weather_source = "unavailable"
     if shipment_route:
         logger.info(
             "route_agent: real route %s → %s (mode=%s, carrier=%s)",
@@ -294,6 +338,18 @@ def _execute(
         )
         if not preferred_mode and shipment_route.get("transport_mode"):
             preferred_mode = shipment_route["transport_mode"]
+
+        lat, lon = shipment_route.get("origin_lat"), shipment_route.get("origin_lon")
+        if lat is not None and lon is not None:
+            live_weather = _fetch_live_weather(float(lat), float(lon))
+            if live_weather:
+                shipment_route["weather_condition"] = live_weather["weather_condition"]
+                shipment_route["ambient_temp_c"] = live_weather["ambient_temp_c"]
+                weather_source = "live"
+            elif shipment_route.get("weather_condition"):
+                weather_source = "static"
+        elif shipment_route.get("weather_condition"):
+            weather_source = "static"
 
     route = _select_route_llm(temp_class, preferred_mode, reason, product_id, shipment_route)
     if route is None:
@@ -322,6 +378,7 @@ def _execute(
         "selection_method": route.get("selection_method", "rule_based"),
         "selection_rationale": route.get("selection_rationale", ""),
         "requires_approval": True,
+        "weather_source": weather_source,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
