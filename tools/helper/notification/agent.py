@@ -203,9 +203,8 @@ class AgenticNotificationAgent:
             if stakeholder.email:
                 channels.append(NotificationChannel.EMAIL)
             
-            # SMS path disabled for this deployment.
-            # if sms_justified and stakeholder.sms and severity in ['CRITICAL', 'HIGH']:
-            #     channels.append(NotificationChannel.SMS)
+            if sms_justified and stakeholder.sms and severity in ['CRITICAL', 'HIGH']:
+                channels.append(NotificationChannel.SMS)
             
             # Slack for internal stakeholders
             if (stakeholder.slack_handle and 

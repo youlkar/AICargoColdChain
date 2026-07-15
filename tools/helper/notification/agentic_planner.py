@@ -59,36 +59,52 @@ class AgenticStrategicPlanner:
             context or {}
         )
         
-        try:
-            response = await self.llm.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt()
-                    },
-                    {
+        messages = [
+            {"role": "system", "content": self._get_system_prompt()},
+            {"role": "user", "content": prompt},
+        ]
+        required_keys = ("severity", "stakeholder_priorities")
+
+        for attempt in range(1, 3):
+            raw: Optional[str] = None
+            try:
+                response = await self.llm.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.2,  # Some creativity but mostly logical
+                    max_tokens=1500,
+                    response_format={"type": "json_object"}
+                )
+
+                raw = response.choices[0].message.content
+                strategy = json.loads(raw)
+
+                missing = [k for k in required_keys if k not in strategy]
+                if missing:
+                    raise ValueError(f"strategy missing required keys: {missing} (raw: {raw[:200]!r})")
+
+                print(f"[AGENTIC PLANNER] Strategy created (attempt {attempt})")
+                print(f"[AGENTIC PLANNER] Severity: {strategy.get('severity')}")
+                print(f"[AGENTIC PLANNER] Reasoning: {strategy.get('reasoning', '')[:100]}...")
+
+                return strategy
+
+            except Exception as e:
+                if attempt == 1:
+                    print(f"[AGENTIC PLANNER] Attempt 1 failed ({e}) — retrying with correction")
+                    messages.append({"role": "assistant", "content": raw if raw is not None else str(e)})
+                    messages.append({
                         "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.2,  # Some creativity but mostly logical
-                max_tokens=1500,
-                response_format={"type": "json_object"}
-            )
-            
-            strategy = json.loads(response.choices[0].message.content)
-            
-            print(f"[AGENTIC PLANNER] Strategy created")
-            print(f"[AGENTIC PLANNER] Severity: {strategy.get('severity')}")
-            print(f"[AGENTIC PLANNER] Reasoning: {strategy.get('reasoning')[:100]}...")
-            
-            return strategy
-            
-        except Exception as e:
-            print(f"[ERROR] Strategic planning failed: {e}")
-            # Fallback to conservative strategy
-            return self._fallback_strategy(notification_input)
+                        "content": (
+                            "Your previous response was invalid — it must be valid JSON containing "
+                            f"at minimum the keys {list(required_keys)}, matching the schema in the "
+                            "original instructions. Respond again with corrected JSON only."
+                        ),
+                    })
+                    continue
+                print(f"[ERROR] Strategic planning failed after retry: {e}")
+                # Fallback to conservative strategy
+                return self._fallback_strategy(notification_input)
     
     def _get_system_prompt(self) -> str:
         """System prompt for strategic planner"""

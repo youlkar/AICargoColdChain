@@ -10,6 +10,12 @@ from datetime import datetime
 from typing import Dict, Optional
 from pathlib import Path
 
+try:
+    from src.supabase_client import write_notification_delivery
+except Exception:
+    def write_notification_delivery(record: dict) -> bool:
+        return False
+
 # Production imports (install with: pip install aiosmtplib twilio)
 try:
     import aiosmtplib
@@ -62,7 +68,28 @@ class EmailProvider:
     Production: Gmail SMTP, SendGrid, AWS SES, Mailgun
     Hackathon: Mock with detailed logging
     """
-    
+
+    def _log_delivery(self, payload: dict) -> None:
+        # Local JSONL (unchanged, fast/offline-safe) + durable Supabase copy.
+        # Best-effort — a logging failure must never break notification sending.
+        try:
+            with open(self.log_file, 'a') as f:
+                f.write(json.dumps(payload) + '\n')
+        except Exception:
+            pass
+        write_notification_delivery({
+            'notification_id': payload.get('notification_id'),
+            'provider': payload.get('provider'),
+            'channel': 'email',
+            'recipient': payload.get('to'),
+            'subject': payload.get('subject'),
+            'severity': payload.get('severity'),
+            'recipient_role': payload.get('recipient_role'),
+            'delivery_status': payload.get('delivery_status'),
+            'error': payload.get('error'),
+            'attempt': payload.get('attempt', 1),
+        })
+
     def __init__(self):
         self.provider = os.getenv('EMAIL_PROVIDER', 'mock')
         self.notification_mode = os.getenv('NOTIFICATION_MODE', 'mock')
@@ -162,84 +189,92 @@ class EmailProvider:
         severity: NotificationSeverity,
         notification_id: str
     ) -> Dict:
-        """Send real email via Gmail SMTP"""
-        
-        try:
-            # Create email message
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = content.subject
-            msg['From'] = f"{self.gmail_config['from_name']} <{self.gmail_config['email']}>"
-            msg['To'] = recipient.email
-            
-            # Create both plain text and HTML versions
-            text_part = MIMEText(content.body, 'plain')
-            html_part = MIMEText(self._format_html_email(content, severity), 'html')
-            
-            msg.attach(text_part)
-            msg.attach(html_part)
-            
-            # Send via Gmail SMTP
-            await aiosmtplib.send(
-                msg,
-                hostname=self.gmail_config['smtp_server'],
-                port=self.gmail_config['smtp_port'],
-                start_tls=True,
-                username=self.gmail_config['email'],
-                password=self.gmail_config['password']
-            )
-            
-            # Log successful send
-            email_payload = {
-                'notification_id': notification_id,
-                'timestamp': datetime.utcnow().isoformat(),
-                'provider': 'gmail_smtp_production',
-                'to': recipient.email,
-                'from': self.gmail_config['email'],
-                'subject': content.subject,
-                'severity': severity.value,
-                'recipient_role': recipient.role.value,
-                'delivery_status': 'sent',
-                'smtp_server': self.gmail_config['smtp_server']
-            }
-            
-            with open(self.log_file, 'a') as f:
-                f.write(json.dumps(email_payload) + '\n')
-            
-            print(f"[EMAIL-GMAIL] Sent to {recipient.email}: {content.subject}")
-            
-            return {
-                'status': NotificationStatus.SENT,
-                'sent_at': datetime.utcnow(),
-                'delivery_metadata': {
+        """Send real email via Gmail SMTP, retrying once on transient failures."""
+
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = content.subject
+        msg['From'] = f"{self.gmail_config['from_name']} <{self.gmail_config['email']}>"
+        msg['To'] = recipient.email
+
+        text_part = MIMEText(content.body, 'plain')
+        html_part = MIMEText(self._format_html_email(content, severity), 'html')
+        msg.attach(text_part)
+        msg.attach(html_part)
+
+        max_attempts = 2
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                await aiosmtplib.send(
+                    msg,
+                    hostname=self.gmail_config['smtp_server'],
+                    port=self.gmail_config['smtp_port'],
+                    start_tls=True,
+                    username=self.gmail_config['email'],
+                    password=self.gmail_config['password']
+                )
+
+                self._log_delivery({
+                    'notification_id': notification_id,
+                    'timestamp': datetime.utcnow().isoformat(),
                     'provider': 'gmail_smtp_production',
-                    'message_id': f"gmail_{notification_id}",
-                    'recipient_email': recipient.email,
-                    'smtp_server': self.gmail_config['smtp_server']
+                    'to': recipient.email,
+                    'from': self.gmail_config['email'],
+                    'subject': content.subject,
+                    'severity': severity.value,
+                    'recipient_role': recipient.role.value,
+                    'delivery_status': 'sent',
+                    'smtp_server': self.gmail_config['smtp_server'],
+                    'attempt': attempt,
+                })
+
+                print(f"[EMAIL-GMAIL] Sent to {recipient.email}: {content.subject}"
+                      + (f" (attempt {attempt})" if attempt > 1 else ""))
+
+                return {
+                    'status': NotificationStatus.SENT,
+                    'sent_at': datetime.utcnow(),
+                    'delivery_metadata': {
+                        'provider': 'gmail_smtp_production',
+                        'message_id': f"gmail_{notification_id}",
+                        'recipient_email': recipient.email,
+                        'smtp_server': self.gmail_config['smtp_server'],
+                        'attempts': attempt,
+                    }
                 }
-            }
-            
-        except Exception as e:
-            print(f"[EMAIL-GMAIL] Gmail SMTP send failed: {e}")
-            
-            # Log the failure
-            error_payload = {
-                'notification_id': notification_id,
-                'timestamp': datetime.utcnow().isoformat(),
-                'provider': 'gmail_smtp_production',
-                'to': recipient.email,
-                'subject': content.subject,
-                'delivery_status': 'failed',
-                'error': str(e)
-            }
-            
-            with open(self.log_file, 'a') as f:
-                f.write(json.dumps(error_payload) + '\n')
-            
-            return {
-                'status': NotificationStatus.FAILED,
-                'error': f'Gmail SMTP send failed: {str(e)}',
-                'sent_at': datetime.utcnow()
-            }
+
+            except Exception as e:
+                last_exc = e
+                # Auth failures are permanent — retrying with the same bad
+                # credentials wastes time and won't ever succeed.
+                is_permanent = isinstance(e, getattr(aiosmtplib, 'SMTPAuthenticationError', ()))
+                if is_permanent or attempt == max_attempts:
+                    break
+                print(f"[EMAIL-GMAIL] Attempt {attempt} failed ({e}) — retrying")
+                await asyncio.sleep(1.5)
+
+        e = last_exc
+        print(f"[EMAIL-GMAIL] Gmail SMTP send failed after {attempt} attempt(s): {e}")
+
+        # Log the failure
+        error_payload = {
+            'notification_id': notification_id,
+            'timestamp': datetime.utcnow().isoformat(),
+            'provider': 'gmail_smtp_production',
+            'to': recipient.email,
+            'subject': content.subject,
+            'delivery_status': 'failed',
+            'error': str(e),
+            'attempt': attempt,
+        }
+        self._log_delivery(error_payload)
+
+        return {
+            'status': NotificationStatus.FAILED,
+            'error': f'Gmail SMTP send failed: {str(e)}',
+            'sent_at': datetime.utcnow()
+        }
     
     async def _send_sendgrid_email(
         self,
@@ -435,13 +470,7 @@ class SMSProvider:
         severity: NotificationSeverity,
         notification_id: str
     ) -> Dict:
-        """Send SMS notification"""
-        # SMS integration is disabled for this deployment.
-        return {
-            'status': NotificationStatus.FAILED,
-            'error': 'SMS integration is disabled in this deployment'
-        }
-        
+        """Send SMS notification (routed via WhatsApp — see _send_production_sms)"""
         if not recipient.sms:
             return {
                 'status': NotificationStatus.FAILED,
@@ -470,33 +499,34 @@ class SMSProvider:
         severity: NotificationSeverity,
         notification_id: str
     ) -> Dict:
-        """Send real SMS via Twilio"""
-        
+        """Send via Twilio's WhatsApp sandbox (real SMS deferred — needs A2P 10DLC)."""
+
         try:
-            from_phone = os.getenv('TWILIO_FROM_PHONE', '+1-555-PHARMA')
-            
-            # Create SMS-appropriate message (truncate if needed)
+            from_phone = os.getenv('TWILIO_WHATSAPP_FROM', '+14155238886')
+
+            # WhatsApp isn't SMS-length-constrained, but keep the same
+            # truncation as a sane cap for a chat-style alert message.
             sms_body = f"{severity.value.upper()}: {content.subject}\n{content.summary}"
-            if len(sms_body) > 160:
-                sms_body = sms_body[:157] + "..."
-            
+            if len(sms_body) > 1000:
+                sms_body = sms_body[:997] + "..."
+
             # Send via Twilio (run in thread since Twilio is sync)
             def send_twilio_sms():
                 return self.twilio_client.messages.create(
                     body=sms_body,
-                    from_=from_phone,
-                    to=recipient.sms
+                    from_=f"whatsapp:{from_phone}",
+                    to=f"whatsapp:{recipient.sms}"
                 )
-            
+
             # Run Twilio call in thread pool
             loop = asyncio.get_event_loop()
             message = await loop.run_in_executor(None, send_twilio_sms)
-            
+
             # Log successful send
             sms_payload = {
                 'notification_id': notification_id,
                 'timestamp': datetime.utcnow().isoformat(),
-                'provider': 'twilio_production',
+                'provider': 'twilio_whatsapp_sandbox',
                 'to': recipient.sms,
                 'from': from_phone,
                 'body': sms_body,
@@ -507,33 +537,33 @@ class SMSProvider:
                 'twilio_message_sid': message.sid,
                 'twilio_status': message.status
             }
-            
+
             with open(self.log_file, 'a') as f:
                 f.write(json.dumps(sms_payload) + '\n')
-            
-            print(f"[SMS-PROD] Sent to {recipient.sms}: {sms_body[:50]}...")
-            print(f"[SMS-PROD] Twilio SID: {message.sid}")
+
+            print(f"[WHATSAPP-PROD] Sent to {recipient.sms}: {sms_body[:50]}...")
+            print(f"[WHATSAPP-PROD] Twilio SID: {message.sid}")
             
             return {
                 'status': NotificationStatus.SENT,
                 'sent_at': datetime.utcnow(),
                 'delivery_metadata': {
-                    'provider': 'twilio_production',
+                    'provider': 'twilio_whatsapp_sandbox',
                     'message_id': message.sid,
                     'recipient_phone': recipient.sms,
                     'character_count': len(sms_body),
                     'twilio_status': message.status
                 }
             }
-            
+
         except Exception as e:
-            print(f"[SMS-PROD] Twilio send failed: {e}")
-            
+            print(f"[WHATSAPP-PROD] Twilio send failed: {e}")
+
             # Log the failure
             error_payload = {
                 'notification_id': notification_id,
                 'timestamp': datetime.utcnow().isoformat(),
-                'provider': 'twilio_production',
+                'provider': 'twilio_whatsapp_sandbox',
                 'to': recipient.sms,
                 'body': sms_body if 'sms_body' in locals() else 'N/A',
                 'delivery_status': 'failed',
@@ -784,9 +814,7 @@ class NotificationChannelManager:
     
     def __init__(self):
         self.email = EmailProvider()
-        # SMS provider disabled for current deployment.
-        # self.sms = SMSProvider()
-        self.sms = None
+        self.sms = SMSProvider()  # routed via WhatsApp sandbox, see SMSProvider._send_production_sms
         self.slack = SlackProvider()
     
     async def send_notification(
@@ -804,10 +832,7 @@ class NotificationChannelManager:
             if channel == NotificationChannel.EMAIL:
                 return await self.email.send(recipient, content, severity, notification_id)
             elif channel == NotificationChannel.SMS:
-                return {
-                    'status': NotificationStatus.FAILED,
-                    'error': 'SMS integration is disabled in this deployment'
-                }
+                return await self.sms.send(recipient, content, severity, notification_id)
             elif channel == NotificationChannel.SLACK:
                 return await self.slack.send(recipient, content, severity, notification_id)
             elif channel == NotificationChannel.DASHBOARD:
