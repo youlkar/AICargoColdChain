@@ -27,7 +27,7 @@ class StakeholderRegistry:
                     role=RecipientRole.DIRECTOR,
                     name='Dr. Robert Chen',
                     email='youlkar97@gmail.com',
-                    sms='+1-555-0001',
+                    sms='+14846499338',
                     slack_handle='@robert.chen',
                     priority='URGENT',
                     on_call=True
@@ -38,7 +38,7 @@ class StakeholderRegistry:
                         role=RecipientRole.QA_MANAGER,
                         name='Sarah Martinez',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-0100',
+                        sms='+14846499338',
                         slack_handle='@sarah.martinez',
                         priority='HIGH',
                         on_call=True
@@ -48,7 +48,7 @@ class StakeholderRegistry:
                         role=RecipientRole.QA_MANAGER,
                         name='David Kim',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-0101',
+                        sms='+14846499338',
                         slack_handle='@david.kim',
                         priority='HIGH',
                         on_call=False
@@ -60,7 +60,7 @@ class StakeholderRegistry:
                         role=RecipientRole.LOGISTICS_OPS,
                         name='Maria Rodriguez',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-0200',
+                        sms='+14846499338',
                         slack_handle='@maria.rodriguez',
                         priority='HIGH',
                         on_call=True
@@ -70,7 +70,7 @@ class StakeholderRegistry:
                         role=RecipientRole.LOGISTICS_OPS,
                         name='James Wilson',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-0201',
+                        sms='+14846499338',
                         slack_handle='@james.wilson',
                         priority='NORMAL',
                         on_call=False
@@ -84,7 +84,7 @@ class StakeholderRegistry:
                         role=RecipientRole.HOSPITAL_ADMIN,
                         name='Dr. Lisa Thompson',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-1001',
+                        sms='+14846499338',
                         facility_id='HOSP-GEN-001',
                         priority='HIGH'
                     ),
@@ -93,7 +93,7 @@ class StakeholderRegistry:
                         role=RecipientRole.HOSPITAL_ADMIN,
                         name='Michael Chang',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-1002',
+                        sms='+14846499338',
                         facility_id='HOSP-CITY-001',
                         priority='HIGH'
                     ),
@@ -102,7 +102,7 @@ class StakeholderRegistry:
                         role=RecipientRole.HOSPITAL_ADMIN,
                         name='Dr. Amanda Foster',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-1003',
+                        sms='+14846499338',
                         facility_id='HOSP-REG-001',
                         priority='NORMAL'
                     )
@@ -113,7 +113,7 @@ class StakeholderRegistry:
                         role=RecipientRole.PHARMACY_DIRECTOR,
                         name='Dr. Kevin Park',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-2001',
+                        sms='+14846499338',
                         facility_id='PHARM-CENT-001',
                         priority='HIGH'
                     ),
@@ -122,7 +122,7 @@ class StakeholderRegistry:
                         role=RecipientRole.PHARMACY_DIRECTOR,
                         name='Jennifer Adams',
                         email='youlkar97@gmail.com',
-                        sms='+1-555-2002',
+                        sms='+14846499338',
                         facility_id='PHARM-METRO-001',
                         priority='NORMAL'
                     )

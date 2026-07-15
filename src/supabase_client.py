@@ -382,6 +382,21 @@ def delete_all_orchestrator_runs() -> bool:
         return False
 
 
+def write_notification_delivery(record: dict) -> bool:
+    # Durable delivery log for notification_agent — mirrors the local JSONL
+    # logs in tools/helper/notification/channels.py but survives container
+    # restarts / multi-replica scale-out. Best-effort: never raises.
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        client.table("notification_deliveries").insert(record).execute()
+        return True
+    except Exception as e:
+        logger.warning("notification_deliveries insert failed: %s", e)
+        return False
+
+
 def count_recent_agent_actions(shipment_id: str, tool_name: str, hours: int = 1) -> int:
     # Count how many times `tool_name` appears in actions_taken/corrective_actions
     client = _get_client()
