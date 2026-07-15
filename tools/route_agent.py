@@ -274,7 +274,12 @@ def _select_route_llm(
     prompt = (
         "You are choosing a pharmaceutical cold-chain reroute.\n"
         "Choose exactly one option from the provided candidates only.\n"
-        "Prioritize product temperature safety first, then urgency/ETA, then preferred mode.\n"
+        "Prioritize in this order:\n"
+        "  1. Product temperature safety (never compromise this)\n"
+        "  2. Whether the option's route actually serves the shipment's real destination "
+        "(match the destination city/airport given below against each option's route string)\n"
+        "  3. Urgency/ETA impact\n"
+        "  4. Preferred transport mode\n"
         "Return JSON only: {\"selected_index\": <int>, \"rationale\": \"<1 sentence>\"}\n\n"
         f"Product ID: {product_id or 'unknown'}\n"
         f"Temperature class: {temp_class}\n"
@@ -284,23 +289,35 @@ def _select_route_llm(
         f"Options: {json.dumps(option_rows)}"
     )
 
-    try:
-        resp = llm.invoke(prompt)
-        payload = _extract_json(_response_text(resp))
-        idx = int(payload.get("selected_index", -1))
-        if idx < 0 or idx >= len(option_rows):
+    for attempt in range(2):
+        try:
+            resp = llm.invoke(prompt)
+            raw = _response_text(resp)
+            payload = _extract_json(raw)
+            idx = int(payload.get("selected_index", -1))
+            if idx < 0 or idx >= len(option_rows):
+                raise ValueError(f"selected_index {idx} out of range for {len(option_rows)} options (raw: {raw[:200]!r})")
+            chosen = option_rows[idx]
+            return {
+                "recommended_route": chosen["route"],
+                "carrier": chosen["carrier"],
+                "eta_change_hours": chosen["eta_change_hours"],
+                "selection_method": "llm",
+                "selection_rationale": str(payload.get("rationale", "")).strip(),
+            }
+        except Exception as exc:
+            if attempt == 0:
+                logger.info("route_agent LLM selection attempt 1 failed (%s) — retrying with correction", exc)
+                prompt = (
+                    prompt
+                    + "\n\nYour previous response was not valid — it must be exactly "
+                    "{\"selected_index\": <int 0 to " + str(len(option_rows) - 1) + ">, \"rationale\": \"<1 sentence>\"} "
+                    "with no other text. Respond again, correctly this time."
+                )
+                continue
+            logger.warning("route_agent LLM selection failed after retry: %s", exc)
             return None
-        chosen = option_rows[idx]
-        return {
-            "recommended_route": chosen["route"],
-            "carrier": chosen["carrier"],
-            "eta_change_hours": chosen["eta_change_hours"],
-            "selection_method": "llm",
-            "selection_rationale": str(payload.get("rationale", "")).strip(),
-        }
-    except Exception as exc:
-        logger.warning("route_agent LLM selection failed: %s", exc)
-        return None
+    return None
 
 
 class RouteInput(BaseModel):
