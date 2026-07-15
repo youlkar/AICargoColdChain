@@ -17,6 +17,8 @@ export function tierToSemantic(tier) {
 
 export function runStatusSemantic(decision) {
   const d = decision || {};
+  const isRejected = d._execution_mode === 'rejected' || d.review_status === 'rejected';
+  if (isRejected) return 'rejected';
   const isApproved = d._execution_mode === 'confirmed' || d._execution_mode === 'post_approval'
     || d.review_status === 'confirmed';
   if (d.awaiting_approval && !isApproved) return 'crit';

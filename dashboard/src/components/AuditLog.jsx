@@ -16,12 +16,13 @@ const TIER_STYLE = {
   LOW:      { bg: 'var(--aud-green-soft)', color: 'var(--aud-green)' },
 };
 
-const RUN_STATUS_LABEL = { crit: 'Awaiting', warn: 'Corrections', ok: 'Resolved', info: 'No actions' };
+const RUN_STATUS_LABEL = { crit: 'Awaiting', warn: 'Corrections', ok: 'Resolved', info: 'No actions', rejected: 'Rejected' };
 const RUN_STATUS_STYLE = {
   crit: { bg: 'var(--aud-amber-soft)', color: 'var(--aud-amber)' },
   warn: { bg: 'var(--aud-amber-soft)', color: 'var(--aud-amber)' },
   ok:   { bg: 'var(--aud-green-soft)', color: 'var(--aud-green)' },
   info: { bg: 'var(--aud-panel-border)', color: 'var(--aud-ink-2)' },
+  rejected: { bg: 'var(--aud-red-soft)', color: 'var(--aud-red)' },
 };
 
 function TierPill({ tier }) {
@@ -156,41 +157,53 @@ function ComplianceRow({ rec }) {
     );
   }
 
+  const finalScore = complianceFinalScore(rec);
+  const detScore = complianceDetScore(rec);
+  const mlScore = complianceMlScore(rec);
+  const rulesFired = complianceRulesFired(rec);
+  const actions = complianceActions(rec);
+  const requiresApproval = complianceRequiresApproval(rec);
+  const hasMlFeatures = (rec.ml_top_features || []).length > 0;
+
   return (
     <>
       <div className="aud-row" onClick={() => setOpen(o => !o)}>
         <TierPill tier={rec.risk_tier} />
         <span className="aud-id">{rec.window_id}</span>
         <span className="aud-sub2">{rec.shipment_id} / {rec.container_id}</span>
-        <span className="aud-mono" style={{ fontSize: 12, color: 'var(--aud-ink-1)' }}>{rec.final_score?.toFixed(4)}</span>
-        {rec.requires_human_approval && <Shield style={{ width: 14, height: 14, color: 'var(--aud-amber)' }} />}
+        <span className="aud-mono" style={{ fontSize: 12, color: 'var(--aud-ink-1)' }}>{finalScore?.toFixed(4) ?? '—'}</span>
+        {requiresApproval && <Shield style={{ width: 14, height: 14, color: 'var(--aud-amber)' }} />}
         <span className="aud-grow" />
-        <span className="aud-time">{rec.assessment_timestamp}</span>
+        <span className="aud-time">{recordTimestamp(rec)}</span>
         <ChevronDown className="aud-chev" style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />
       </div>
       <div className={`aud-detail${open ? ' open' : ''}`}>
         <div>
           <div className="collbl">Scores</div>
-          <div className="line">Det: <b>{rec.deterministic_score?.toFixed(4)}</b></div>
-          <div className="line">ML: <b>{rec.ml_score?.toFixed(4)}</b></div>
-          <div className="line">Final: <b>{rec.final_score?.toFixed(4)}</b></div>
+          <div className="line">Det: <b>{detScore != null ? detScore.toFixed(4) : '—'}</b></div>
+          <div className="line">ML: <b>{mlScore != null ? mlScore.toFixed(4) : '—'}</b></div>
+          <div className="line">Final: <b>{finalScore != null ? finalScore.toFixed(4) : '—'}</b></div>
         </div>
         <div>
           <div className="collbl">Rules Fired</div>
-          {rec.deterministic_rules_fired?.length > 0
-            ? rec.deterministic_rules_fired.map((r, j) => <div key={j} className="line">{humanize(r)}</div>)
+          {rulesFired.length > 0
+            ? rulesFired.map((r, j) => <div key={j} className="line">{humanize(r)}</div>)
             : <div className="line" style={{ color: 'var(--aud-ink-2)' }}>none</div>}
         </div>
         <div>
           <div className="collbl">Top ML Features</div>
-          {(rec.ml_top_features || []).slice(0, 3).map((f, j) => (
-            <div key={j} className="line">{humanize(f.feature)}: <b>{f.shap_value?.toFixed(3)}</b></div>
-          ))}
+          {hasMlFeatures
+            ? rec.ml_top_features.slice(0, 3).map((f, j) => (
+                <div key={j} className="line">{humanize(f.feature)}: <b>{f.shap_value?.toFixed(3)}</b></div>
+              ))
+            : <div className="line" style={{ color: 'var(--aud-ink-2)' }}>not available for this record</div>}
         </div>
         <div>
           <div className="collbl">Actions</div>
-          {rec.recommended_actions?.map((a, j) => <div key={j} className="line" style={{ color: 'var(--aud-blue)' }}>{humanize(a)}</div>)}
-          {rec.requires_human_approval && <div className="line" style={{ color: 'var(--aud-red)', fontWeight: 600, marginTop: 4 }}>Requires human approval</div>}
+          {actions.length > 0
+            ? actions.map((a, j) => <div key={j} className="line" style={{ color: 'var(--aud-blue)' }}>{humanize(a)}</div>)
+            : <div className="line" style={{ color: 'var(--aud-ink-2)' }}>none</div>}
+          {requiresApproval && <div className="line" style={{ color: 'var(--aud-red)', fontWeight: 600, marginTop: 4 }}>Requires human approval</div>}
         </div>
       </div>
     </>
@@ -250,14 +263,69 @@ function recordTimestamp(rec) {
   return rec.assessment_timestamp || rec.timestamp || null;
 }
 
+// Compliance records come from two shapes: legacy batch-scored records
+// (audit_*.jsonl — final_score, deterministic_score, deterministic_rules_fired,
+// requires_human_approval at top level) and real orchestrator-driven records
+// (compliance_events.jsonl — det/ml scores and rules nested under `details`,
+// no requires_human_approval field at all). These helpers read whichever
+// shape is present instead of assuming the legacy one.
+function complianceFinalScore(r) {
+  return r.final_score ?? r.details?.fused_score ?? null;
+}
+function complianceDetScore(r) {
+  return r.deterministic_score ?? r.details?.det_score ?? null;
+}
+function complianceMlScore(r) {
+  return r.ml_score ?? r.details?.ml_prob ?? null;
+}
+function complianceRulesFired(r) {
+  return r.deterministic_rules_fired ?? r.details?.rules ?? [];
+}
+function complianceActions(r) {
+  if (r.recommended_actions) return r.recommended_actions;
+  if (r.details?.primary_issue) return [r.details.primary_issue];
+  return [];
+}
+function complianceRequiresApproval(r) {
+  if (typeof r.requires_human_approval === 'boolean') return r.requires_human_approval;
+  return r.risk_tier === 'CRITICAL' || r.risk_tier === 'HIGH';
+}
+
 const REPORT_COLUMNS = {
   compliance: {
-    header: ['window_id', 'shipment_id', 'container_id', 'risk_tier', 'final_score', 'requires_human_approval', 'timestamp'],
-    row: r => [r.window_id, r.shipment_id, r.container_id, r.risk_tier, r.final_score, r.requires_human_approval ? 'true' : 'false', recordTimestamp(r)],
+    header: [
+      'window_id', 'shipment_id', 'container_id', 'risk_tier',
+      'deterministic_score', 'ml_score', 'final_score',
+      'rules_fired', 'recommended_actions', 'regulatory_tags',
+      'requires_human_approval', 'event_type', 'log_id', 'timestamp',
+    ],
+    row: r => [
+      r.window_id, r.shipment_id, r.container_id, r.risk_tier,
+      complianceDetScore(r), complianceMlScore(r), complianceFinalScore(r),
+      complianceRulesFired(r).join('; '), complianceActions(r).join('; '),
+      (r.regulatory_tags || []).join('; '),
+      complianceRequiresApproval(r) ? 'true' : 'false',
+      r.event_type ?? '', r.log_id ?? '', recordTimestamp(r),
+    ],
   },
   runs: {
-    header: ['window_id', 'shipment_id', 'container_id', 'risk_tier', 'status', 'fused_risk_score', 'timestamp'],
-    row: r => [r.window_id || r._window_id, r.shipment_id, r.container_id, r.risk_tier, RUN_STATUS_LABEL[runStatusSemantic(r)], r.fused_risk_score, r.timestamp],
+    header: [
+      'window_id', 'shipment_id', 'container_id', 'risk_tier', 'status',
+      'fused_risk_score', 'ml_spoilage_probability', 'confidence',
+      'agents_involved', 'replan_count', 'guardrail_findings',
+      'decision_summary', 'requires_approval', 'timestamp',
+    ],
+    row: r => [
+      r.window_id || r._window_id, r.shipment_id, r.container_id, r.risk_tier,
+      RUN_STATUS_LABEL[runStatusSemantic(r)],
+      r.fused_risk_score, r.ml_spoilage_probability, r.confidence,
+      [...new Set((r.actions_taken || []).map(a => a?.tool).filter(Boolean))].join('; '),
+      r.replan_count ?? 0,
+      (r.guardrail_findings || []).filter(f => f && f.passed === false).length,
+      r.decision_summary || r.llm_reasoning || r.approval_reason || '',
+      r.requires_approval ? 'true' : 'false',
+      r.timestamp,
+    ],
   },
 };
 
@@ -272,7 +340,11 @@ function downloadReport(report) {
     triggerDownload(new Blob([csvLines.join('\n')], { type: 'text/csv' }), filename);
     return;
   }
-  const lines = [
+
+  // PDF: real per-record rows (window/shipment/tier/score/timestamp), not
+  // just an aggregate summary — a "signed" audit export needs actual
+  // evidence rows, not just counts.
+  const summaryLines = [
     report.name,
     report.meta,
     'Status: Electronically Signed',
@@ -282,13 +354,26 @@ function downloadReport(report) {
       ? `Critical tier: ${report.rows.filter(r => r.risk_tier === 'CRITICAL').length}`
       : `Awaiting approval: ${report.rows.filter(r => runStatusSemantic(r) === 'crit').length}`,
     report.kind === 'compliance'
-      ? `Requires human approval: ${report.rows.filter(r => r.requires_human_approval).length}`
+      ? `Requires human approval: ${report.rows.filter(complianceRequiresApproval).length}`
       : `Resolved: ${report.rows.filter(r => runStatusSemantic(r) === 'ok').length}`,
     `Content hash: ${report.hash.slice(0, 32)}...`,
     '',
     `Generated in-browser from the live ${report.kind === 'compliance' ? 'compliance audit log' : 'shipment run history'}.`,
+    '',
+    '--- Records ---',
   ];
-  triggerDownload(new Blob([buildMinimalPdf(lines)], { type: 'application/pdf' }), filename);
+  // buildMinimalPdf is a single fixed-height page (~35 lines) with no
+  // pagination — cap what we list and point to the CSV for the full set,
+  // rather than silently rendering rows off the bottom of the page.
+  const PDF_ROW_CAP = 30;
+  const rowLines = report.kind === 'compliance'
+    ? report.rows.slice(0, PDF_ROW_CAP).map(r => `${r.window_id} | ${r.shipment_id}/${r.container_id} | ${r.risk_tier} | score=${complianceFinalScore(r) ?? '—'} | ${recordTimestamp(r)}`)
+    : report.rows.slice(0, PDF_ROW_CAP).map(r => `${r.window_id || r._window_id} | ${r.shipment_id}/${r.container_id} | ${r.risk_tier} | ${RUN_STATUS_LABEL[runStatusSemantic(r)]} | ${r.timestamp}`);
+  if (report.rows.length > PDF_ROW_CAP) {
+    rowLines.push(`... ${report.rows.length - PDF_ROW_CAP} more record(s) — use CSV format for the full export`);
+  }
+
+  triggerDownload(new Blob([buildMinimalPdf([...summaryLines, ...rowLines])], { type: 'application/pdf' }), filename);
 }
 
 export default function AuditLog() {
